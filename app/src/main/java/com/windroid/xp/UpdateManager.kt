@@ -54,7 +54,7 @@ object UpdateManager {
             }
 
             val json = connection.inputStream.bufferedReader().use { it.readText() }
-            val release = if (isDev) findLatestDevRelease(JSONArray(json)) else JSONObject(json)
+            val release = (if (isDev) findLatestDevRelease(JSONArray(json)) else JSONObject(json))
                 ?: return@withContext CheckResult.Failed("No ${BuildConfig.UPDATE_CHANNEL} release is available yet.")
 
             val tag = release.optString("tag_name")
