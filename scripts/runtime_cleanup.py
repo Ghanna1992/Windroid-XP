@@ -45,15 +45,12 @@ if old_search not in text:
     raise SystemExit("Start search block not found")
 text = text.replace(old_search, new_search, 1)
 
-# Keep taskbar app clicks consistent with Start/desktop launches so recent ordering persists.
 old_task = '''                    TaskButton(custom ?: app.icon, "▣", app.label) { startOpen = false; launchApp(context, app) }'''
 new_task = '''                    TaskButton(custom ?: app.icon, "▣", app.label) { openAndroidApp(app) }'''
 if old_task not in text:
     raise SystemExit("Taskbar launch block not found")
 text = text.replace(old_task, new_task, 1)
 
-# Add an invisible click-catcher behind the Start menu. It sits above the desktop/windows
-# but below the Start menu itself, so a tap anywhere outside the menu dismisses it.
 old_start = '''        if (startOpen) {
             StartMenu(
 '''
@@ -70,5 +67,58 @@ if old_start not in text:
     raise SystemExit("Start menu host block not found")
 text = text.replace(old_start, new_start, 1)
 
+# Pull the tray chevron right up against the clock. The old fixed-width clock box
+# right-aligned its text, which created the visual hole between the chevron and time.
+old_tray = '''    Row(
+        Modifier.fillMaxHeight().width(82.dp).padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(18.dp).clickable { expanded = true },
+            contentAlignment = Alignment.Center
+        ) {
+            Text("⌃", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.width(2.dp))
+        Clock()
+    }'''
+new_tray = '''    Row(
+        Modifier.fillMaxHeight().width(72.dp).padding(end = 2.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(17.dp).clickable { expanded = true },
+            contentAlignment = Alignment.Center
+        ) {
+            Text("⌃", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.width(1.dp))
+        Clock()
+    }'''
+if old_tray not in text:
+    raise SystemExit("System tray layout block not found")
+text = text.replace(old_tray, new_tray, 1)
+
+old_clock = '''    Box(Modifier.width(58.dp), contentAlignment = Alignment.CenterEnd) {
+        Text(
+            SimpleDateFormat("h:mm a", Locale.getDefault()).format(now),
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Normal,
+            maxLines = 1
+        )
+    }'''
+new_clock = '''    Text(
+        SimpleDateFormat("h:mm a", Locale.getDefault()).format(now),
+        color = Color.White,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Normal,
+        maxLines = 1
+    )'''
+if old_clock not in text:
+    raise SystemExit("Clock layout block not found")
+text = text.replace(old_clock, new_clock, 1)
+
 path.write_text(text, encoding="utf-8")
-print("Applied runtime cleanup and Start-menu outside-tap dismissal")
+print("Applied runtime cleanup, Start-menu dismissal, and tight tray spacing")
