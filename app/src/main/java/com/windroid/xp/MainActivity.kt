@@ -2,6 +2,7 @@ package com.windroid.xp
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -13,11 +14,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,8 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,17 +80,51 @@ private fun launchApp(context: Context, app: LaunchableApp) {
     }
 }
 
+private fun listAssetImages(context: Context, folder: String): List<String> {
+    val allowed = setOf("png", "jpg", "jpeg", "webp")
+    return try {
+        context.assets.list(folder)
+            ?.filter { name -> name.substringAfterLast('.', "").lowercase() in allowed }
+            ?.sortedBy { it.lowercase() }
+            ?: emptyList()
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun loadAssetImage(context: Context, folder: String, fileName: String?): ImageBitmap? {
+    if (fileName.isNullOrBlank()) return null
+    return try {
+        context.assets.open("$folder/$fileName").use { stream ->
+            BitmapFactory.decodeStream(stream)?.asImageBitmap()
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun iconPrefKey(id: String) = "custom_icon_$id"
+
 @Composable
 fun WindroidDesktop(context: Context) {
     var startOpen by remember { mutableStateOf(false) }
     var computerOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
+    var settingsOpen by remember { mutableStateOf(false) }
     val apps = remember { installedApps(context) }
     val launchedApps = remember { mutableStateListOf<LaunchableApp>() }
 
     val prefs = remember { context.getSharedPreferences("windroid_prefs", Context.MODE_PRIVATE) }
     var userName by remember { mutableStateOf(prefs.getString("user_name", "User") ?: "User") }
     var userAvatar by remember { mutableStateOf(prefs.getString("user_avatar", "🙂") ?: "🙂") }
+    var selectedBackground by remember { mutableStateOf(prefs.getString("desktop_background", null)) }
+    var customizationVersion by remember { mutableIntStateOf(0) }
+    var desktopPackages by remember {
+        mutableStateOf(prefs.getStringSet("desktop_apps", emptySet())?.toSet() ?: emptySet())
+    }
+
+    val backgrounds = remember { listAssetImages(context, "backgrounds") }
+    val iconFiles = remember { listAssetImages(context, "icons") }
 
     var updateWindowOpen by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateManager.UpdateInfo?>(null) }
@@ -105,7 +138,20 @@ fun WindroidDesktop(context: Context) {
         startOpen = false
         computerOpen = false
         profileOpen = false
+        settingsOpen = false
         launchApp(context, app)
+    }
+
+    fun setIcon(id: String, fileName: String?) {
+        prefs.edit().apply {
+            if (fileName == null) remove(iconPrefKey(id)) else putString(iconPrefKey(id), fileName)
+        }.apply()
+        customizationVersion++
+    }
+
+    fun setDesktopApp(packageName: String, enabled: Boolean) {
+        desktopPackages = if (enabled) desktopPackages + packageName else desktopPackages - packageName
+        prefs.edit().putStringSet("desktop_apps", desktopPackages).apply()
     }
 
     fun checkForUpdates(manual: Boolean) {
@@ -142,19 +188,29 @@ fun WindroidDesktop(context: Context) {
     val taskbarHeight = 43.dp
 
     Box(Modifier.fillMaxSize().navigationBarsPadding()) {
-        XPWallpaper()
+        WallpaperLayer(context, selectedBackground)
 
         Column(
             Modifier.fillMaxHeight().padding(start = 10.dp, top = 12.dp, bottom = taskbarHeight + 8.dp),
-            verticalArrangement = Arrangement.spacedBy(17.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            DesktopIcon("🖥️", "My Computer") { computerOpen = true; startOpen = false }
-            DesktopIcon("📁", "My Documents") { startOpen = false }
-            DesktopIcon("🌐", "Internet Explorer") {
+            DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_my_computer", "🖥️", "My Computer") {
+                computerOpen = true; startOpen = false
+            }
+            DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_my_documents", "📁", "My Documents") {
+                startOpen = false
+            }
+            DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_internet", "🌐", "Internet Explorer") {
                 startOpen = false
                 context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com")))
             }
-            DesktopIcon("🗑️", "Recycle Bin") { startOpen = false }
+            DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_recycle_bin", "🗑️", "Recycle Bin") {
+                startOpen = false
+            }
+
+            apps.filter { it.packageName in desktopPackages }.forEach { app ->
+                DesktopAppIcon(context, prefs, customizationVersion, app) { openAndroidApp(app) }
+            }
         }
 
         if (computerOpen) {
@@ -165,7 +221,7 @@ fun WindroidDesktop(context: Context) {
                 Spacer(Modifier.height(5.dp))
                 Text("📁  Internal Storage", fontSize = 14.sp)
                 Spacer(Modifier.height(14.dp))
-                Text("⚙️  Control Panel", color = Color(0xFF003399), fontSize = 14.sp, modifier = Modifier.clickable {
+                Text("⚙️  Android Settings", color = Color(0xFF003399), fontSize = 14.sp, modifier = Modifier.clickable {
                     context.startActivity(Intent(Settings.ACTION_SETTINGS))
                 })
                 Spacer(Modifier.height(18.dp))
@@ -180,13 +236,33 @@ fun WindroidDesktop(context: Context) {
                 onSave = { name, avatar ->
                     userName = name.ifBlank { "User" }
                     userAvatar = avatar
-                    prefs.edit()
-                        .putString("user_name", userName)
-                        .putString("user_avatar", userAvatar)
-                        .apply()
+                    prefs.edit().putString("user_name", userName).putString("user_avatar", userAvatar).apply()
                     profileOpen = false
                 },
                 onCancel = { profileOpen = false },
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+
+        if (settingsOpen) {
+            AppearanceWindow(
+                context = context,
+                apps = apps,
+                backgrounds = backgrounds,
+                iconFiles = iconFiles,
+                selectedBackground = selectedBackground,
+                prefs = prefs,
+                customizationVersion = customizationVersion,
+                desktopPackages = desktopPackages,
+                onBackgroundSelected = { fileName ->
+                    selectedBackground = fileName
+                    prefs.edit().apply {
+                        if (fileName == null) remove("desktop_background") else putString("desktop_background", fileName)
+                    }.apply()
+                },
+                onIconSelected = { id, fileName -> setIcon(id, fileName) },
+                onDesktopToggle = { pkg, enabled -> setDesktopApp(pkg, enabled) },
+                onClose = { settingsOpen = false },
                 modifier = Modifier.align(Alignment.Center)
             )
         }
@@ -201,15 +277,12 @@ fun WindroidDesktop(context: Context) {
                     Text(notes.take(280), fontSize = 11.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
                 }
                 Spacer(Modifier.height(15.dp))
-
                 val readyFile = downloadedUpdate
                 val found = updateInfo
                 if (readyFile != null) {
                     XPActionButton("Install update") {
                         val opened = UpdateManager.installUpdate(context, readyFile)
-                        if (!opened) {
-                            updateStatus = "Allow installs from Windroid XP, then return and tap Install update again."
-                        }
+                        if (!opened) updateStatus = "Allow installs from Windroid XP, then return and tap Install update again."
                     }
                     Spacer(Modifier.height(8.dp))
                 } else if (found != null) {
@@ -223,9 +296,7 @@ fun WindroidDesktop(context: Context) {
                                 downloadedUpdate = file
                                 updateStatus = "Download complete. Opening the Android installer..."
                                 val opened = UpdateManager.installUpdate(context, file)
-                                if (!opened) {
-                                    updateStatus = "Allow installs from Windroid XP, then return and tap Install update."
-                                }
+                                if (!opened) updateStatus = "Allow installs from Windroid XP, then return and tap Install update."
                             }
                         }
                     }
@@ -234,9 +305,7 @@ fun WindroidDesktop(context: Context) {
                     XPActionButton("Check again") { checkForUpdates(true) }
                     Spacer(Modifier.height(8.dp))
                 }
-
-                Text("Remind me later", color = Color(0xFF003399), fontSize = 12.sp,
-                    modifier = Modifier.clickable { updateWindowOpen = false })
+                Text("Remind me later", color = Color(0xFF003399), fontSize = 12.sp, modifier = Modifier.clickable { updateWindowOpen = false })
             }
         }
 
@@ -245,13 +314,13 @@ fun WindroidDesktop(context: Context) {
                 apps = apps,
                 recentApps = launchedApps,
                 context = context,
+                prefs = prefs,
+                customizationVersion = customizationVersion,
                 userName = userName,
                 userAvatar = userAvatar,
-                onEditProfile = {
-                    startOpen = false
-                    profileOpen = true
-                },
+                onEditProfile = { startOpen = false; profileOpen = true },
                 onLaunchApp = { openAndroidApp(it) },
+                onOpenAppearance = { startOpen = false; settingsOpen = true },
                 onCheckUpdates = { checkForUpdates(true) },
                 modifier = Modifier.align(Alignment.BottomStart).padding(bottom = taskbarHeight)
             )
@@ -266,24 +335,20 @@ fun WindroidDesktop(context: Context) {
                 Modifier.fillMaxHeight().width(104.dp).background(
                     Brush.verticalGradient(listOf(Color(0xFF55B747), Color(0xFF33952E), Color(0xFF257E25))),
                     RoundedCornerShape(topEnd = 13.dp, bottomEnd = 13.dp)
-                ).clickable { startOpen = !startOpen; computerOpen = false; profileOpen = false },
+                ).clickable { startOpen = !startOpen; computerOpen = false; profileOpen = false; settingsOpen = false },
                 contentAlignment = Alignment.Center
             ) { Text("⊞  start", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
 
             Spacer(Modifier.width(5.dp))
-
-            Row(
-                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 if (computerOpen) {
                     TaskButton(null, "🖥️", "My Computer") { computerOpen = true; startOpen = false }
                 }
                 launchedApps.forEach { app ->
-                    TaskButton(app.icon, "▣", app.label) {
-                        startOpen = false
-                        launchApp(context, app)
+                    val custom = remember(customizationVersion, app.packageName) {
+                        loadAssetImage(context, "icons", prefs.getString(iconPrefKey("app_${app.packageName}"), null))
                     }
+                    TaskButton(custom ?: app.icon, "▣", app.label) { startOpen = false; launchApp(context, app) }
                 }
             }
 
@@ -300,60 +365,244 @@ fun WindroidDesktop(context: Context) {
 }
 
 @Composable
+private fun WallpaperLayer(context: Context, selectedBackground: String?) {
+    val image = remember(selectedBackground) { loadAssetImage(context, "backgrounds", selectedBackground) }
+    if (image != null) {
+        Image(bitmap = image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+    } else {
+        XPWallpaper()
+    }
+}
+
+@Composable
 private fun XPWallpaper() {
     Canvas(Modifier.fillMaxSize()) {
         drawRect(
             brush = Brush.verticalGradient(
-                listOf(
-                    Color(0xFF2087D5),
-                    Color(0xFF55B6ED),
-                    Color(0xFFBDEAFF)
-                ),
+                listOf(Color(0xFF2087D5), Color(0xFF55B6ED), Color(0xFFBDEAFF)),
                 endY = size.height * 0.68f
             )
         )
-
         val farHill = Path().apply {
             moveTo(0f, size.height * 0.70f)
-            cubicTo(
-                size.width * 0.18f, size.height * 0.58f,
-                size.width * 0.44f, size.height * 0.64f,
-                size.width * 0.64f, size.height * 0.72f
-            )
-            cubicTo(
-                size.width * 0.78f, size.height * 0.78f,
-                size.width * 0.92f, size.height * 0.70f,
-                size.width, size.height * 0.67f
-            )
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
+            cubicTo(size.width * 0.18f, size.height * 0.58f, size.width * 0.44f, size.height * 0.64f, size.width * 0.64f, size.height * 0.72f)
+            cubicTo(size.width * 0.78f, size.height * 0.78f, size.width * 0.92f, size.height * 0.70f, size.width, size.height * 0.67f)
+            lineTo(size.width, size.height); lineTo(0f, size.height); close()
         }
-        drawPath(
-            farHill,
-            brush = Brush.verticalGradient(listOf(Color(0xFF79C752), Color(0xFF4DAA35)))
-        )
-
+        drawPath(farHill, brush = Brush.verticalGradient(listOf(Color(0xFF79C752), Color(0xFF4DAA35))))
         val nearHill = Path().apply {
             moveTo(0f, size.height * 0.82f)
-            cubicTo(
-                size.width * 0.20f, size.height * 0.69f,
-                size.width * 0.40f, size.height * 0.70f,
-                size.width * 0.58f, size.height * 0.82f
-            )
-            cubicTo(
-                size.width * 0.75f, size.height * 0.93f,
-                size.width * 0.90f, size.height * 0.85f,
-                size.width, size.height * 0.80f
-            )
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
+            cubicTo(size.width * 0.20f, size.height * 0.69f, size.width * 0.40f, size.height * 0.70f, size.width * 0.58f, size.height * 0.82f)
+            cubicTo(size.width * 0.75f, size.height * 0.93f, size.width * 0.90f, size.height * 0.85f, size.width, size.height * 0.80f)
+            lineTo(size.width, size.height); lineTo(0f, size.height); close()
         }
-        drawPath(
-            nearHill,
-            brush = Brush.verticalGradient(listOf(Color(0xFF56B33D), Color(0xFF248C2A)))
-        )
+        drawPath(nearHill, brush = Brush.verticalGradient(listOf(Color(0xFF56B33D), Color(0xFF248C2A))))
+    }
+}
+
+@Composable
+private fun DesktopBuiltInIcon(
+    context: Context,
+    prefs: android.content.SharedPreferences,
+    version: Int,
+    id: String,
+    fallback: String,
+    label: String,
+    onClick: () -> Unit
+) {
+    val image = remember(version, id) { loadAssetImage(context, "icons", prefs.getString(iconPrefKey(id), null)) }
+    DesktopIcon(image, fallback, label, onClick)
+}
+
+@Composable
+private fun DesktopAppIcon(
+    context: Context,
+    prefs: android.content.SharedPreferences,
+    version: Int,
+    app: LaunchableApp,
+    onClick: () -> Unit
+) {
+    val image = remember(version, app.packageName) {
+        loadAssetImage(context, "icons", prefs.getString(iconPrefKey("app_${app.packageName}"), null))
+    }
+    DesktopIcon(image ?: app.icon, "▣", app.label, onClick)
+}
+
+@Composable
+private fun DesktopIcon(image: ImageBitmap?, fallback: String, label: String, onClick: () -> Unit) {
+    Column(Modifier.width(88.dp).clickable { onClick() }, horizontalAlignment = Alignment.CenterHorizontally) {
+        if (image != null) {
+            Image(bitmap = image, contentDescription = null, modifier = Modifier.size(42.dp), contentScale = ContentScale.Fit)
+        } else {
+            Text(fallback, fontSize = 37.sp)
+        }
+        Text(label, color = Color.White, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
+    }
+}
+
+@Composable
+private fun AppearanceWindow(
+    context: Context,
+    apps: List<LaunchableApp>,
+    backgrounds: List<String>,
+    iconFiles: List<String>,
+    selectedBackground: String?,
+    prefs: android.content.SharedPreferences,
+    customizationVersion: Int,
+    desktopPackages: Set<String>,
+    onBackgroundSelected: (String?) -> Unit,
+    onIconSelected: (String, String?) -> Unit,
+    onDesktopToggle: (String, Boolean) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var page by remember { mutableStateOf("home") }
+    var iconTarget by remember { mutableStateOf<String?>(null) }
+    var iconTargetLabel by remember { mutableStateOf("") }
+
+    XPWindow("Display Properties", modifier.width(350.dp)) {
+        when {
+            iconTarget != null -> {
+                Text("Choose icon for $iconTargetLabel", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.height(330.dp).verticalScroll(rememberScrollState())) {
+                    PickerRow("Use default", null) { onIconSelected(iconTarget!!, null); iconTarget = null }
+                    iconFiles.forEach { file ->
+                        val image = remember(file) { loadAssetImage(context, "icons", file) }
+                        PickerRow(file, image) { onIconSelected(iconTarget!!, file); iconTarget = null }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                XPActionButton("Back") { iconTarget = null }
+            }
+            page == "background" -> {
+                Text("Desktop Background", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.height(330.dp).verticalScroll(rememberScrollState())) {
+                    PickerRow("Windroid default", null, selectedBackground == null) { onBackgroundSelected(null) }
+                    backgrounds.forEach { file ->
+                        val image = remember(file) { loadAssetImage(context, "backgrounds", file) }
+                        PickerRow(file, image, selectedBackground == file) { onBackgroundSelected(file) }
+                    }
+                    if (backgrounds.isEmpty()) {
+                        Text("No images found in assets/backgrounds yet.", fontSize = 11.sp, color = Color(0xFF666666), modifier = Modifier.padding(8.dp))
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                XPActionButton("Back") { page = "home" }
+            }
+            page == "desktopIcons" -> {
+                Text("Desktop Icons", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.height(330.dp).verticalScroll(rememberScrollState())) {
+                    listOf(
+                        "builtin_my_computer" to "My Computer",
+                        "builtin_my_documents" to "My Documents",
+                        "builtin_internet" to "Internet Explorer",
+                        "builtin_recycle_bin" to "Recycle Bin"
+                    ).forEach { (id, label) ->
+                        AssignmentRow(label, prefs.getString(iconPrefKey(id), null)) {
+                            iconTarget = id; iconTargetLabel = label
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                XPActionButton("Back") { page = "home" }
+            }
+            page == "apps" -> {
+                Text("Applications", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Assign custom icons or pin apps to the XP desktop.", fontSize = 10.sp, color = Color(0xFF666666))
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.height(350.dp).verticalScroll(rememberScrollState())) {
+                    apps.forEach { app ->
+                        AppCustomizationRow(
+                            app = app,
+                            assignedFile = prefs.getString(iconPrefKey("app_${app.packageName}"), null),
+                            onChangeIcon = {
+                                iconTarget = "app_${app.packageName}"
+                                iconTargetLabel = app.label
+                            },
+                            onToggleDesktop = { onDesktopToggle(app.packageName, app.packageName !in desktopPackages) },
+                            onDesktop = app.packageName in desktopPackages
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                XPActionButton("Back") { page = "home" }
+            }
+            else -> {
+                Text("Customize Windroid XP", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(12.dp))
+                SettingsChoice("🖼️", "Desktop Background", "Choose any image from assets/backgrounds") { page = "background" }
+                SettingsChoice("🖥️", "Desktop Icons", "Assign individual images to Windroid shortcuts") { page = "desktopIcons" }
+                SettingsChoice("📦", "Applications", "Custom app icons and desktop shortcuts") { page = "apps" }
+                Spacer(Modifier.height(14.dp))
+                Text("Images added to the GitHub assets folders appear here automatically in the next build.", fontSize = 10.sp, color = Color(0xFF666666))
+                Spacer(Modifier.height(12.dp))
+                XPActionButton("Close") { onClose() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsChoice(icon: String, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(icon, fontSize = 25.sp)
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(title, color = Color(0xFF003399), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, fontSize = 10.sp, color = Color(0xFF555555))
+        }
+    }
+}
+
+@Composable
+private fun PickerRow(label: String, image: ImageBitmap?, selected: Boolean = false, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }
+            .background(if (selected) Color(0xFFDCEBFA) else Color.Transparent)
+            .padding(horizontal = 6.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(42.dp).background(Color.White).border(1.dp, Color(0xFFB7B7B7)), contentAlignment = Alignment.Center) {
+            if (image != null) Image(bitmap = image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            else Text("Default", fontSize = 8.sp)
+        }
+        Spacer(Modifier.width(9.dp))
+        Text(label, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun AssignmentRow(label: String, assignedFile: String?, onChange: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(assignedFile ?: "Default icon", fontSize = 9.sp, color = Color(0xFF666666), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        XPActionButton("Change") { onChange() }
+    }
+}
+
+@Composable
+private fun AppCustomizationRow(
+    app: LaunchableApp,
+    assignedFile: String?,
+    onChangeIcon: () -> Unit,
+    onToggleDesktop: () -> Unit,
+    onDesktop: Boolean
+) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (app.icon != null) Image(bitmap = app.icon, contentDescription = null, modifier = Modifier.size(28.dp)) else Text("▣", fontSize = 20.sp)
+        Spacer(Modifier.width(7.dp))
+        Column(Modifier.weight(1f)) {
+            Text(app.label, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(assignedFile ?: "Android icon", fontSize = 8.sp, color = Color(0xFF666666), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text("Icon", color = Color(0xFF003399), fontSize = 10.sp, modifier = Modifier.clickable { onChangeIcon() }.padding(5.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(if (onDesktop) "Remove" else "Desktop", color = Color(0xFF003399), fontSize = 10.sp, modifier = Modifier.clickable { onToggleDesktop() }.padding(5.dp))
     }
 }
 
@@ -364,9 +613,7 @@ private fun XPActionButton(label: String, onClick: () -> Unit) {
             .border(1.dp, Color(0xFF7F9DB9), RoundedCornerShape(2.dp))
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 6.dp)
-    ) {
-        Text(label, fontSize = 12.sp, color = Color.Black)
-    }
+    ) { Text(label, fontSize = 12.sp, color = Color.Black) }
 }
 
 @Composable
@@ -378,21 +625,9 @@ private fun TaskButton(icon: ImageBitmap?, fallback: String, label: String, onCl
             .clickable { onClick() }.padding(horizontal = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (icon != null) {
-            Image(bitmap = icon, contentDescription = null, modifier = Modifier.size(20.dp))
-        } else {
-            Text(fallback, color = Color.White, fontSize = 11.sp)
-        }
+        if (icon != null) Image(bitmap = icon, contentDescription = null, modifier = Modifier.size(20.dp)) else Text(fallback, color = Color.White, fontSize = 11.sp)
         Spacer(Modifier.width(5.dp))
         Text(label, color = Color.White, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun DesktopIcon(icon: String, label: String, onClick: () -> Unit) {
-    Column(Modifier.width(88.dp).clickable { onClick() }, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(icon, fontSize = 37.sp)
-        Text(label, color = Color.White, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
     }
 }
 
@@ -401,10 +636,13 @@ private fun StartMenu(
     apps: List<LaunchableApp>,
     recentApps: List<LaunchableApp>,
     context: Context,
+    prefs: android.content.SharedPreferences,
+    customizationVersion: Int,
     userName: String,
     userAvatar: String,
     onEditProfile: () -> Unit,
     onLaunchApp: (LaunchableApp) -> Unit,
+    onOpenAppearance: () -> Unit,
     onCheckUpdates: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -413,16 +651,13 @@ private fun StartMenu(
 
     Column(modifier.width(350.dp).heightIn(max = 590.dp).shadow(8.dp).border(2.dp, Color(0xFF174EA6)).background(Color.White)) {
         Row(
-            Modifier.fillMaxWidth().height(68.dp)
-                .background(Brush.verticalGradient(listOf(Color(0xFF2F7BDC), Color(0xFF1855B6))))
-                .clickable { onEditProfile() }
-                .padding(horizontal = 12.dp),
+            Modifier.fillMaxWidth().height(68.dp).background(Brush.verticalGradient(listOf(Color(0xFF2F7BDC), Color(0xFF1855B6))))
+                .clickable { onEditProfile() }.padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                Modifier.size(48.dp).background(Color.White, RoundedCornerShape(4.dp)).border(1.dp, Color(0xFFB7CBE6), RoundedCornerShape(4.dp)),
-                contentAlignment = Alignment.Center
-            ) { Text(userAvatar, fontSize = 28.sp) }
+            Box(Modifier.size(48.dp).background(Color.White, RoundedCornerShape(4.dp)).border(1.dp, Color(0xFFB7CBE6), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                Text(userAvatar, fontSize = 28.sp)
+            }
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(userName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -431,53 +666,29 @@ private fun StartMenu(
         }
 
         Row(Modifier.weight(1f)) {
-            if (showAllPrograms) {
-                Column(Modifier.weight(1.35f).fillMaxHeight().background(Color.White)) {
-                    Row(
-                        Modifier.fillMaxWidth().clickable { showAllPrograms = false }.padding(horizontal = 10.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("◀", fontSize = 14.sp, color = Color(0xFF174EA6))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Back", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF174EA6))
+            Column(Modifier.weight(1.35f).fillMaxHeight().background(Color.White)) {
+                if (showAllPrograms) {
+                    Row(Modifier.fillMaxWidth().clickable { showAllPrograms = false }.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("◀", fontSize = 14.sp, color = Color(0xFF174EA6)); Spacer(Modifier.width(8.dp)); Text("Back", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF174EA6))
                     }
                     Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6)))
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        items(apps) { app ->
-                            StartMenuAppItem(app) { onLaunchApp(app) }
-                        }
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        apps.forEach { app -> StartMenuAppItem(context, prefs, customizationVersion, app) { onLaunchApp(app) } }
                     }
-                }
-            } else {
-                Column(Modifier.weight(1.35f).fillMaxHeight().background(Color.White)) {
-                    LazyColumn(Modifier.weight(1f)) {
-                        item { StartMenuItem("🌐", "Internet") { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com"))) } }
-                        item { StartMenuItem("📧", "E-mail") { } }
-                        item { Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6))) }
+                } else {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        StartMenuItem("🌐", "Internet") { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com"))) }
+                        StartMenuItem("📧", "E-mail") { }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6)))
                         if (recentApps.isEmpty()) {
-                            item {
-                                Text(
-                                    "Recently used programs will appear here.",
-                                    color = Color(0xFF666666),
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
-                                )
-                            }
+                            Text("Recently used programs will appear here.", color = Color(0xFF666666), fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp))
                         } else {
-                            items(recentApps) { app ->
-                                StartMenuAppItem(app) { onLaunchApp(app) }
-                            }
+                            recentApps.forEach { app -> StartMenuAppItem(context, prefs, customizationVersion, app) { onLaunchApp(app) } }
                         }
                     }
                     Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6)))
-                    Row(
-                        Modifier.fillMaxWidth().clickable { showAllPrograms = true }.padding(horizontal = 10.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("All Programs", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(8.dp))
-                        Text("▶", color = Color(0xFF248B23), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth().clickable { showAllPrograms = true }.padding(horizontal = 10.dp, vertical = 10.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                        Text("All Programs", fontSize = 13.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.width(8.dp)); Text("▶", color = Color(0xFF248B23), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -488,35 +699,27 @@ private fun StartMenu(
                 RightMenuItem("🎵", "My Music") { }
                 Spacer(Modifier.height(5.dp)); Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFB4CCE7))); Spacer(Modifier.height(5.dp))
                 RightMenuItem("🖥️", "My Computer") { }
-                RightMenuItem("⚙️", "Control Panel") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                RightMenuItem("🎨", "Appearance") { onOpenAppearance() }
+                RightMenuItem("⚙️", "Android Settings") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                 RightMenuItem("🛡️", "Windows Update") { onCheckUpdates() }
                 RightMenuItem("🔍", "Search") { }
                 RightMenuItem("❓", "Help and Support") { }
             }
         }
 
-        Row(
-            Modifier.fillMaxWidth().height(47.dp).background(xpBlue).padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth().height(47.dp).background(xpBlue).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
             Text("🔑 Log Off", color = Color.White, fontSize = 12.sp); Spacer(Modifier.width(16.dp)); Text("⏻ Turn Off Computer", color = Color.White, fontSize = 12.sp)
         }
     }
 }
 
 @Composable
-private fun StartMenuAppItem(app: LaunchableApp, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 10.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (app.icon != null) {
-            Image(bitmap = app.icon, contentDescription = null, modifier = Modifier.size(28.dp))
-        } else {
-            Text("▣", fontSize = 22.sp)
-        }
-        Spacer(Modifier.width(9.dp))
-        Text(app.label, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun StartMenuAppItem(context: Context, prefs: android.content.SharedPreferences, version: Int, app: LaunchableApp, onClick: () -> Unit) {
+    val custom = remember(version, app.packageName) { loadAssetImage(context, "icons", prefs.getString(iconPrefKey("app_${app.packageName}"), null)) }
+    Row(Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+        val icon = custom ?: app.icon
+        if (icon != null) Image(bitmap = icon, contentDescription = null, modifier = Modifier.size(28.dp)) else Text("▣", fontSize = 22.sp)
+        Spacer(Modifier.width(9.dp)); Text(app.label, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -535,61 +738,31 @@ private fun RightMenuItem(icon: String, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProfileWindow(
-    currentName: String,
-    currentAvatar: String,
-    onSave: (String, String) -> Unit,
-    onCancel: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun ProfileWindow(currentName: String, currentAvatar: String, onSave: (String, String) -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
     var draftName by remember(currentName) { mutableStateOf(currentName) }
     var draftAvatar by remember(currentAvatar) { mutableStateOf(currentAvatar) }
     val avatars = listOf("🙂", "😎", "🤖", "🐺", "🦊", "🐱", "👾", "🧑")
-
     XPWindow("User Accounts", modifier) {
         Text("Pick a name and picture for your account.", fontSize = 13.sp)
-        Spacer(Modifier.height(12.dp))
-        Text("User name", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
-        BasicTextField(
-            value = draftName,
-            onValueChange = { if (it.length <= 24) draftName = it },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().background(Color.White).border(1.dp, Color(0xFF7F9DB9)).padding(7.dp)
-        )
-        Spacer(Modifier.height(12.dp))
-        Text("Account picture", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(12.dp)); Text("User name", fontSize = 11.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(4.dp))
+        BasicTextField(value = draftName, onValueChange = { if (it.length <= 24) draftName = it }, singleLine = true, modifier = Modifier.fillMaxWidth().background(Color.White).border(1.dp, Color(0xFF7F9DB9)).padding(7.dp))
+        Spacer(Modifier.height(12.dp)); Text("Account picture", fontSize = 11.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(7.dp))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             avatars.forEach { avatar ->
-                Box(
-                    Modifier.padding(end = 7.dp).size(42.dp)
-                        .background(Color.White, RoundedCornerShape(4.dp))
-                        .border(if (avatar == draftAvatar) 2.dp else 1.dp, if (avatar == draftAvatar) Color(0xFF245EDB) else Color(0xFFB7B7B7), RoundedCornerShape(4.dp))
-                        .clickable { draftAvatar = avatar },
-                    contentAlignment = Alignment.Center
-                ) {
+                Box(Modifier.padding(end = 7.dp).size(42.dp).background(Color.White, RoundedCornerShape(4.dp)).border(if (avatar == draftAvatar) 2.dp else 1.dp, if (avatar == draftAvatar) Color(0xFF245EDB) else Color(0xFFB7B7B7), RoundedCornerShape(4.dp)).clickable { draftAvatar = avatar }, contentAlignment = Alignment.Center) {
                     Text(avatar, fontSize = 25.sp)
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            XPActionButton("Save") { onSave(draftName, draftAvatar) }
-            XPActionButton("Cancel") { onCancel() }
-        }
+        Spacer(Modifier.height(16.dp)); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { XPActionButton("Save") { onSave(draftName, draftAvatar) }; XPActionButton("Cancel") { onCancel() } }
     }
 }
 
 @Composable
 private fun XPWindow(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier.width(316.dp).shadow(10.dp).background(Color(0xFFECE9D8)).border(2.dp, Color(0xFF245EDB))) {
-        Row(
-            Modifier.fillMaxWidth().height(31.dp).background(Brush.horizontalGradient(listOf(Color(0xFF0A56D8), Color(0xFF3A8AF1)))).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp); Spacer(Modifier.weight(1f))
-            Box(Modifier.size(20.dp).background(Color(0xFFE95B45), RoundedCornerShape(2.dp)), contentAlignment = Alignment.Center) { Text("×", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+        Row(Modifier.fillMaxWidth().height(31.dp).background(Brush.horizontalGradient(listOf(Color(0xFF0A56D8), Color(0xFF3A8AF1)))).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp); Spacer(Modifier.weight(1f)); Box(Modifier.size(20.dp).background(Color(0xFFE95B45), RoundedCornerShape(2.dp)), contentAlignment = Alignment.Center) { Text("×", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
         }
         Column(Modifier.padding(18.dp), content = content)
     }
