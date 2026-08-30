@@ -3,6 +3,114 @@ from pathlib import Path
 path = Path("app/src/main/java/com/windroid/xp/MainActivity.kt")
 text = path.read_text(encoding="utf-8")
 
+# Fix registry entries to match the actual bundled XP asset filenames.
+text = text.replace('''    "recycle" to "Recycle Bin.png",''', '''    "recycle" to "Recycle Bin (empty).png",''', 1)
+text = text.replace('''    "update" to "Automatic Updates.png",''', '''    "update" to "Windows Update.png",''', 1)
+
+# Give common Android apps a conservative XP-era visual equivalent. These are only defaults:
+# a user-selected custom icon still overrides them everywhere else in the launcher.
+old_installed = '''        .map { info ->
+            val icon = try { info.loadIcon(pm).toBitmap(96, 96).asImageBitmap() } catch (_: Exception) { null }
+            LaunchableApp(
+                label = info.loadLabel(pm).toString(),
+                packageName = info.activityInfo.packageName,
+                icon = icon
+            )
+        }'''
+new_installed = '''        .map { info ->
+            val label = info.loadLabel(pm).toString()
+            val packageName = info.activityInfo.packageName
+            val realIcon = try { info.loadIcon(pm).toBitmap(96, 96).asImageBitmap() } catch (_: Exception) { null }
+            val icon = defaultXpAppIcon(context, packageName, label) ?: realIcon
+            LaunchableApp(
+                label = label,
+                packageName = packageName,
+                icon = icon
+            )
+        }'''
+if old_installed not in text:
+    raise SystemExit("installedApps mapping block not found")
+text = text.replace(old_installed, new_installed, 1)
+
+anchor = '''private fun launchApp(context: Context, app: LaunchableApp) {'''
+helper = '''private fun defaultXpAppIcon(context: Context, packageName: String, label: String): ImageBitmap? {
+    val pkg = packageName.lowercase()
+    val name = label.lowercase()
+
+    val asset = when {
+        pkg in setOf(
+            "com.android.chrome",
+            "com.opera.browser",
+            "com.opera.gx",
+            "org.mozilla.firefox",
+            "com.microsoft.emmx",
+            "com.sec.android.app.sbrowser"
+        ) || name in setOf("chrome", "opera", "opera gx", "firefox", "microsoft edge", "samsung internet") ->
+            "Internet Explorer 6.png"
+
+        pkg in setOf(
+            "com.google.android.gm",
+            "com.samsung.android.email.provider",
+            "com.samsung.android.email.ui"
+        ) || name in setOf("gmail", "email", "samsung email") ->
+            "Outlook Express.png"
+
+        pkg == "com.google.android.youtube" || name == "youtube" ->
+            "Windows Media Player 10.png"
+
+        pkg in setOf(
+            "com.sec.android.gallery3d",
+            "com.google.android.apps.photos"
+        ) || name in setOf("gallery", "photos", "google photos") ->
+            "Windows Picture and Fax Viewer.png"
+
+        pkg in setOf(
+            "com.sec.android.app.myfiles",
+            "com.google.android.apps.nbu.files"
+        ) || name in setOf("my files", "files", "files by google") ->
+            "Explorer.png"
+
+        pkg in setOf(
+            "com.sec.android.app.popupcalculator",
+            "com.google.android.calculator"
+        ) || name == "calculator" ->
+            "Calculator.png"
+
+        pkg in setOf(
+            "com.sec.android.app.camera",
+            "com.google.android.googlecamera"
+        ) || name == "camera" ->
+            "Digital Camera.png"
+
+        pkg in setOf(
+            "com.samsung.android.app.contacts",
+            "com.google.android.contacts"
+        ) || name == "contacts" ->
+            "Address Book.png"
+
+        pkg in setOf(
+            "com.google.android.apps.messaging",
+            "com.samsung.android.messaging"
+        ) || name == "messages" ->
+            "Windows Messenger.png"
+
+        pkg in setOf(
+            "com.samsung.android.dialer",
+            "com.google.android.dialer"
+        ) || name in setOf("phone", "dialer") ->
+            "Phone.png"
+
+        else -> null
+    }
+
+    return asset?.let { loadAssetImage(context, "icons", it) }
+}
+
+'''
+if anchor not in text:
+    raise SystemExit("launchApp anchor not found")
+text = text.replace(anchor, helper + anchor, 1)
+
 old_browser = '''private fun openDefaultBrowser(context: Context) {
     try {
         openDefaultBrowser(context)
@@ -163,4 +271,4 @@ if old_clock not in text:
 text = text.replace(old_clock, new_clock, 1)
 
 path.write_text(text, encoding="utf-8")
-print("Applied runtime cleanup, modal update blocking, XP icons, Start dismissal, and tight tray spacing")
+print("Applied runtime cleanup, corrected XP system icons, common Android app XP mapping, modal update blocking, Start dismissal, and tight tray spacing")
