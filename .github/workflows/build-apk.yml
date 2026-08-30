@@ -45,6 +45,9 @@ jobs:
       - name: Apply XP system shell expansion
         run: python3 scripts/patch_system_shell.py
 
+      - name: Show transformed source near shell additions
+        run: nl -ba app/src/main/java/com/windroid/xp/MainActivity.kt | sed -n '1155,1185p'
+
       - name: Detect signing configuration
         id: signing
         shell: bash
