@@ -39,6 +39,9 @@ jobs:
       - name: Apply popup and tray fix
         run: python3 scripts/fix_popup_tray.py
 
+      - name: Apply Start menu app search
+        run: python3 scripts/patch_start_search.py
+
       - name: Detect signing configuration
         id: signing
         shell: bash
