@@ -10,9 +10,11 @@ A Windows XP-inspired Android home-screen replacement.
 - Control Panel shortcut to Android Settings
 - Browser shortcut
 - Live taskbar clock
-- GitHub Actions debug APK build
+- GitHub Actions signed APK builds
+- Separate Dev and Stable update channels
 
-## APK
-Every push to `main` runs **Build Windroid XP APK**. Open the Actions run, then download the `Windroid-XP-debug` artifact.
+## Release channels
+- **Dev** is built from normal pushes to `main` and is used for active testing.
+- **Stable** is promoted only after a tested Dev state is approved for public use.
 
-This project recreates the visual language of Windows XP without bundling Microsoft copyrighted assets.
+This project recreates the Windows XP desktop experience on Android while retaining Android as the underlying operating system.
