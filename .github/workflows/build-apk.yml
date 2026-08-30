@@ -28,20 +28,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Finish app icon migration
-        shell: bash
-        run: |
-          mkdir -p app/src/main/assets/icons/apps
-          [ ! -f chatgpt.png ] || mv chatgpt.png app/src/main/assets/icons/apps/ChatGPT.png
-          [ ! -f discord.png ] || mv discord.png app/src/main/assets/icons/apps/Discord.png
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A chatgpt.png discord.png app/src/main/assets/icons/apps
-          if ! git diff --cached --quiet; then
-            git commit -m "Move generated app icons into app library [skip ci]"
-            git push
-          fi
-
       - name: Choose channel
         id: channel
         shell: bash
