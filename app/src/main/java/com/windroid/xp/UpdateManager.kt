@@ -8,6 +8,7 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -17,8 +18,10 @@ import java.net.UnknownHostException
 import java.net.URL
 
 object UpdateManager {
-    private const val RELEASE_API_URL =
+    private const val STABLE_RELEASE_API_URL =
         "https://api.github.com/repos/Ghanna1992/Windroid-XP/releases/latest"
+    private const val DEV_RELEASES_API_URL =
+        "https://api.github.com/repos/Ghanna1992/Windroid-XP/releases?per_page=30"
 
     data class UpdateInfo(
         val versionName: String,
@@ -35,12 +38,14 @@ object UpdateManager {
     suspend fun checkForUpdate(): CheckResult = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
-            connection = (URL(RELEASE_API_URL).openConnection() as HttpURLConnection).apply {
+            val isDev = BuildConfig.UPDATE_CHANNEL == "dev"
+            val endpoint = if (isDev) DEV_RELEASES_API_URL else STABLE_RELEASE_API_URL
+            connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 8000
                 readTimeout = 8000
                 setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "Windroid-XP/${BuildConfig.VERSION_NAME}")
+                setRequestProperty("User-Agent", "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}/${BuildConfig.VERSION_NAME}")
             }
 
             val response = connection.responseCode
@@ -49,8 +54,11 @@ object UpdateManager {
             }
 
             val json = connection.inputStream.bufferedReader().use { it.readText() }
-            val release = JSONObject(json)
-            val latest = release.optString("tag_name").removePrefix("v")
+            val release = if (isDev) findLatestDevRelease(JSONArray(json)) else JSONObject(json)
+                ?: return@withContext CheckResult.Failed("No ${BuildConfig.UPDATE_CHANNEL} release is available yet.")
+
+            val tag = release.optString("tag_name")
+            val latest = if (isDev) tag.removePrefix("dev-v") else tag.removePrefix("v")
             if (latest.isBlank()) {
                 return@withContext CheckResult.Failed("The update server returned an invalid release.")
             }
@@ -58,19 +66,20 @@ object UpdateManager {
                 return@withContext CheckResult.UpToDate
             }
 
+            val expectedAsset = if (isDev) "Windroid-XP-Dev.apk" else "Windroid-XP.apk"
             val assets = release.optJSONArray("assets")
                 ?: return@withContext CheckResult.Failed("The latest release has no downloadable APK.")
             var downloadUrl: String? = null
             for (i in 0 until assets.length()) {
                 val asset = assets.getJSONObject(i)
-                if (asset.optString("name") == "Windroid-XP.apk") {
+                if (asset.optString("name") == expectedAsset) {
                     downloadUrl = asset.optString("browser_download_url")
                     break
                 }
             }
 
             if (downloadUrl.isNullOrBlank()) {
-                return@withContext CheckResult.Failed("The latest release is missing Windroid-XP.apk.")
+                return@withContext CheckResult.Failed("The latest release is missing $expectedAsset.")
             }
             CheckResult.UpdateAvailable(UpdateInfo(latest, downloadUrl, release.optString("body")))
         } catch (_: UnknownHostException) {
@@ -84,15 +93,25 @@ object UpdateManager {
         }
     }
 
+    private fun findLatestDevRelease(releases: JSONArray): JSONObject? {
+        for (i in 0 until releases.length()) {
+            val release = releases.optJSONObject(i) ?: continue
+            if (release.optBoolean("draft", false)) continue
+            if (!release.optBoolean("prerelease", false)) continue
+            if (release.optString("tag_name").startsWith("dev-v")) return release
+        }
+        return null
+    }
+
     suspend fun downloadUpdate(context: Context, update: UpdateInfo): File? = withContext(Dispatchers.IO) {
         try {
             val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
-            val apk = File(updateDir, "Windroid-XP-${update.versionName}.apk")
+            val apk = File(updateDir, "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}-${update.versionName}.apk")
             val connection = (URL(update.downloadUrl).openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = true
                 connectTimeout = 15000
                 readTimeout = 30000
-                setRequestProperty("User-Agent", "Windroid-XP/${BuildConfig.VERSION_NAME}")
+                setRequestProperty("User-Agent", "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}/${BuildConfig.VERSION_NAME}")
             }
             if (connection.responseCode !in 200..299) {
                 connection.disconnect()
@@ -136,8 +155,9 @@ object UpdateManager {
     }
 
     private fun isNewer(candidate: String, current: String): Boolean {
-        val a = candidate.split('.').map { it.toIntOrNull() ?: 0 }
-        val b = current.split('.').map { it.toIntOrNull() ?: 0 }
+        fun parts(value: String): List<Int> = Regex("\\d+").findAll(value).map { it.value.toInt() }.toList()
+        val a = parts(candidate)
+        val b = parts(current)
         val count = maxOf(a.size, b.size)
         for (i in 0 until count) {
             val av = a.getOrElse(i) { 0 }
