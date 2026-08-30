@@ -28,6 +28,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Reorganize icon library
+        shell: bash
+        run: python3 scripts/reorganize_icon_library.py
+
+      - name: Bake icon reorganization into source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/windroid/xp/MainActivity.kt app/src/main/assets/icons chatgpt.png discord.png
+          if ! git diff --cached --quiet; then
+            git commit -m "Reorganize icon library and enable app auto-mapping [skip ci]"
+            git push
+          fi
+
       - name: Choose channel
         id: channel
         shell: bash
