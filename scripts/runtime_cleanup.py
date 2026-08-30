@@ -52,5 +52,23 @@ if old_task not in text:
     raise SystemExit("Taskbar launch block not found")
 text = text.replace(old_task, new_task, 1)
 
+# Add an invisible click-catcher behind the Start menu. It sits above the desktop/windows
+# but below the Start menu itself, so a tap anywhere outside the menu dismisses it.
+old_start = '''        if (startOpen) {
+            StartMenu(
+'''
+new_start = '''        if (startOpen) {
+            Box(
+                Modifier.fillMaxSize().clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) { startOpen = false }
+            )
+            StartMenu(
+'''
+if old_start not in text:
+    raise SystemExit("Start menu host block not found")
+text = text.replace(old_start, new_start, 1)
+
 path.write_text(text, encoding="utf-8")
-print("Applied runtime cleanup")
+print("Applied runtime cleanup and Start-menu outside-tap dismissal")
