@@ -1,0 +1,23 @@
+WINDROID XP IMAGE RESOURCES
+
+Yep — drop image files directly into this drawable folder.
+
+For the wallpaper, use this exact filename:
+    wallpaper_frutiger_aero.png
+
+Recommended wallpaper size:
+    1440 x 3200 (portrait), or similarly high resolution
+
+Other filenames we can wire in later if wanted:
+    user_avatar_1.png
+    user_avatar_2.png
+    user_avatar_3.png
+    desktop_my_computer.png
+    desktop_my_documents.png
+    desktop_internet.png
+    desktop_recycle_bin.png
+    start_button_logo.png
+
+Use lowercase filenames with underscores and no spaces. PNG is preferred.
+
+Once an image is uploaded here, tell Cipher which filename you added and it can be wired into the launcher.
