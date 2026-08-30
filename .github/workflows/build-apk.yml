@@ -30,6 +30,9 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Apply Windroid UI patch
+        run: python3 scripts/patch_taskbar_ui.py
+
       - name: Detect signing configuration
         id: signing
         shell: bash
