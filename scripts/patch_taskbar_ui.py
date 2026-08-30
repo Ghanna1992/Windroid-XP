@@ -3,7 +3,7 @@ from pathlib import Path
 path = Path("app/src/main/java/com/windroid/xp/MainActivity.kt")
 text = path.read_text(encoding="utf-8")
 
-# Make the custom Start artwork stand alone on the XP taskbar.  No generated
+# Make the custom Start artwork stand alone on the XP taskbar. No generated
 # green button is drawn when the asset exists, and the image keeps its shape.
 old_start = '''            Box(
                 Modifier.fillMaxHeight().width(104.dp)
@@ -64,6 +64,74 @@ new_start = '''            Box(
 if old_start not in text:
     raise SystemExit("Start button block not found; source changed")
 text = text.replace(old_start, new_start, 1)
+
+# Desktop shortcuts should fill downward, then begin a fresh column instead of
+# being squeezed into the taskbar when the first column runs out of room.
+old_desktop = '''        Column(
+            Modifier.fillMaxHeight().padding(start = 10.dp, top = 12.dp, bottom = taskbarHeight + 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_my_computer", "🖥️", "My Computer") {
+                computerOpen = true; startOpen = false
+            }
+            DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_my_documents", "📁", "My Documents") { startOpen = false }
+            DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_internet", "🌐", "Internet Explorer") {
+                startOpen = false
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")))
+            }
+            DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_recycle_bin", "🗑️", "Recycle Bin") { startOpen = false }
+
+            apps.filter { it.packageName in desktopPackages }.forEach { app ->
+                DesktopAppIcon(context, prefs, customizationVersion, app) { openAndroidApp(app) }
+            }
+        }
+'''
+new_desktop = '''        BoxWithConstraints(
+            Modifier.fillMaxSize().padding(start = 10.dp, top = 12.dp, end = 8.dp, bottom = taskbarHeight + 8.dp)
+        ) {
+            val desktopApps = apps.filter { it.packageName in desktopPackages }
+            val totalItems = 4 + desktopApps.size
+            val slotHeight = 94.dp
+            val rowsPerColumn = (maxHeight.value / slotHeight.value).toInt().coerceAtLeast(1)
+            val columnCount = ((totalItems + rowsPerColumn - 1) / rowsPerColumn).coerceAtLeast(1)
+
+            Row(
+                Modifier.fillMaxSize().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                repeat(columnCount) { columnIndex ->
+                    Column(
+                        Modifier.width(88.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        repeat(rowsPerColumn) { rowIndex ->
+                            val itemIndex = columnIndex * rowsPerColumn + rowIndex
+                            if (itemIndex < totalItems) {
+                                when (itemIndex) {
+                                    0 -> DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_my_computer", "🖥️", "My Computer") {
+                                        computerOpen = true; startOpen = false
+                                    }
+                                    1 -> DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_my_documents", "📁", "My Documents") { startOpen = false }
+                                    2 -> DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_internet", "🌐", "Internet Explorer") {
+                                        startOpen = false
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")))
+                                    }
+                                    3 -> DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_recycle_bin", "🗑️", "Recycle Bin") { startOpen = false }
+                                    else -> {
+                                        val app = desktopApps[itemIndex - 4]
+                                        DesktopAppIcon(context, prefs, customizationVersion, app) { openAndroidApp(app) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+'''
+if old_desktop not in text:
+    raise SystemExit("Desktop icon block not found; source changed")
+text = text.replace(old_desktop, new_desktop, 1)
 
 # Replace the obvious cyan mini-bar with a compact XP-style notification area.
 old_tray = '''            Row(
@@ -161,4 +229,4 @@ private fun XPSystemTray(context: Context) {
 text = text[:start] + new_task + text[end:]
 
 path.write_text(text, encoding="utf-8")
-print("Patched Windroid XP taskbar UI")
+print("Patched Windroid XP taskbar UI and desktop grid")
