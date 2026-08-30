@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,9 +17,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
@@ -47,85 +50,316 @@ fun WindroidDesktop(context: Context) {
     var startOpen by remember { mutableStateOf(false) }
     var computerOpen by remember { mutableStateOf(false) }
     val apps = remember { installedApps(context) }
-    val xpBlue = Color(0xFF245EDB)
 
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF3A92E8), Color(0xFF76C4F4), Color(0xFF58A947))))) {
-        Column(Modifier.padding(14.dp).padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            DesktopIcon("🖥️", "My Computer") { computerOpen = true }
-            DesktopIcon("📁", "My Documents") { }
+    val xpBlue = Color(0xFF245EDB)
+    val xpDarkBlue = Color(0xFF1941A5)
+    val taskbarHeight = 43.dp
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF2B83D5),
+                        Color(0xFF6AB7E9),
+                        Color(0xFF8FD0F2),
+                        Color(0xFF58A947)
+                    )
+                )
+            )
+            // Keep our Windows taskbar above Samsung/Android's navigation buttons.
+            // This is intentionally safer than forcing immersive mode.
+            .navigationBarsPadding()
+    ) {
+        Column(
+            Modifier
+                .fillMaxHeight()
+                .padding(start = 10.dp, top = 12.dp, bottom = taskbarHeight + 8.dp),
+            verticalArrangement = Arrangement.spacedBy(17.dp)
+        ) {
+            DesktopIcon("🖥️", "My Computer") { computerOpen = true; startOpen = false }
+            DesktopIcon("📁", "My Documents") { startOpen = false }
             DesktopIcon("🌐", "Internet Explorer") {
-                val browser = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com"))
-                context.startActivity(browser)
+                startOpen = false
+                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com")))
             }
-            DesktopIcon("🗑️", "Recycle Bin") { }
+            DesktopIcon("🗑️", "Recycle Bin") { startOpen = false }
         }
 
         if (computerOpen) {
             XPWindow("My Computer", Modifier.align(Alignment.Center)) {
-                Text("Files Stored on This Computer", fontWeight = FontWeight.Bold)
+                Text("Files Stored on This Computer", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(Modifier.height(12.dp))
-                Text("📱  Android Device")
-                Text("📁  Internal Storage")
-                Text("⚙️  Control Panel", Modifier.padding(top = 16.dp).clickable {
-                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
-                })
+                Text("📱  Android Device", fontSize = 14.sp)
+                Spacer(Modifier.height(5.dp))
+                Text("📁  Internal Storage", fontSize = 14.sp)
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "⚙️  Control Panel",
+                    color = Color(0xFF003399),
+                    fontSize = 14.sp,
+                    modifier = Modifier.clickable {
+                        context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                    }
+                )
                 Spacer(Modifier.height(18.dp))
-                Text("Close", color = xpBlue, modifier = Modifier.clickable { computerOpen = false })
+                Text("Close", color = Color(0xFF003399), modifier = Modifier.clickable { computerOpen = false })
             }
         }
 
         if (startOpen) {
-            StartMenu(apps, context, Modifier.align(Alignment.BottomStart).padding(bottom = 48.dp))
+            StartMenu(
+                apps = apps,
+                context = context,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(bottom = taskbarHeight)
+            )
         }
 
+        // XP taskbar. Because the root uses navigationBarsPadding(), this sits above
+        // the Android navigation strip instead of fighting with it.
         Row(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(48.dp).background(xpBlue),
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(taskbarHeight)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF3886E8), xpBlue, Color(0xFF1748AF))
+                    )
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.fillMaxHeight().width(105.dp)
-                    .background(Color(0xFF3C9D36), RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp))
-                    .clickable { startOpen = !startOpen },
+                Modifier
+                    .fillMaxHeight()
+                    .width(104.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFF55B747), Color(0xFF33952E), Color(0xFF257E25))
+                        ),
+                        RoundedCornerShape(topEnd = 13.dp, bottomEnd = 13.dp)
+                    )
+                    .clickable { startOpen = !startOpen; computerOpen = false },
                 contentAlignment = Alignment.Center
-            ) { Text("⊞  start", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+            ) {
+                Text("⊞  start", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(Modifier.width(5.dp))
+
+            // Small XP-style inactive task slot so the bar feels like a desktop taskbar,
+            // rather than a blue footer.
+            Box(
+                Modifier
+                    .height(31.dp)
+                    .widthIn(min = 90.dp, max = 155.dp)
+                    .background(Color(0xFF3579D2), RoundedCornerShape(2.dp))
+                    .border(1.dp, Color(0xFF6AA6F1), RoundedCornerShape(2.dp))
+                    .padding(horizontal = 9.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    if (computerOpen) "My Computer" else "Windroid XP",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
             Spacer(Modifier.weight(1f))
-            Clock()
+
+            Row(
+                Modifier
+                    .fillMaxHeight()
+                    .background(Color(0xFF1595D1))
+                    .padding(horizontal = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("▰  ◉", color = Color.White, fontSize = 11.sp)
+                Spacer(Modifier.width(8.dp))
+                Clock()
+            }
         }
     }
 }
 
 @Composable
 private fun DesktopIcon(icon: String, label: String, onClick: () -> Unit) {
-    Column(Modifier.width(92.dp).clickable { onClick() }, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(icon, fontSize = 36.sp)
-        Text(label, color = Color.White, fontSize = 12.sp, lineHeight = 13.sp)
+    Column(
+        Modifier
+            .width(88.dp)
+            .clickable { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(icon, fontSize = 37.sp)
+        Text(
+            label,
+            color = Color.White,
+            fontSize = 12.sp,
+            lineHeight = 13.sp,
+            maxLines = 2
+        )
     }
 }
 
 @Composable
 private fun StartMenu(apps: List<LaunchableApp>, context: Context, modifier: Modifier = Modifier) {
-    Column(modifier.width(330.dp).heightIn(max = 570.dp).background(Color.White)) {
-        Box(Modifier.fillMaxWidth().height(65.dp).background(Color(0xFF1D62C8)), contentAlignment = Alignment.CenterStart) {
-            Text("  Windroid XP", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+    val xpBlue = Color(0xFF1D62C8)
+
+    Column(
+        modifier
+            .width(350.dp)
+            .heightIn(max = 590.dp)
+            .shadow(8.dp)
+            .border(2.dp, Color(0xFF174EA6))
+            .background(Color.White)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(68.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF2F7BDC), Color(0xFF1855B6))
+                    )
+                )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .background(Color.White, RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center
+            ) { Text("🙂", fontSize = 28.sp) }
+            Spacer(Modifier.width(10.dp))
+            Text("Windroid XP", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
-        LazyColumn(Modifier.weight(1f)) {
-            items(apps) { app ->
-                Text("▣   ${app.label}", Modifier.fillMaxWidth().clickable {
-                    context.packageManager.getLaunchIntentForPackage(app.packageName)?.let(context::startActivity)
-                }.padding(12.dp), fontSize = 15.sp)
+
+        Row(Modifier.weight(1f)) {
+            LazyColumn(
+                Modifier
+                    .weight(1.35f)
+                    .fillMaxHeight()
+                    .background(Color.White)
+            ) {
+                item {
+                    StartMenuItem("🌐", "Internet") {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com")))
+                    }
+                }
+                item {
+                    StartMenuItem("📧", "E-mail") { }
+                }
+                item {
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6)))
+                }
+                items(apps.take(8)) { app ->
+                    StartMenuItem("▣", app.label) {
+                        context.packageManager.getLaunchIntentForPackage(app.packageName)?.let(context::startActivity)
+                    }
+                }
+            }
+
+            Column(
+                Modifier
+                    .weight(0.95f)
+                    .fillMaxHeight()
+                    .background(Color(0xFFDCEBFA))
+                    .padding(vertical = 7.dp)
+            ) {
+                RightMenuItem("📄", "My Documents") { }
+                RightMenuItem("🖼️", "My Pictures") { }
+                RightMenuItem("🎵", "My Music") { }
+                Spacer(Modifier.height(5.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFB4CCE7)))
+                Spacer(Modifier.height(5.dp))
+                RightMenuItem("🖥️", "My Computer") { }
+                RightMenuItem("⚙️", "Control Panel") {
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+                RightMenuItem("🔍", "Search") { }
+                RightMenuItem("❓", "Help and Support") { }
             }
         }
-        Row(Modifier.fillMaxWidth().background(Color(0xFF2A6ACD)).padding(12.dp), horizontalArrangement = Arrangement.End) {
-            Text("Turn Off Computer  ⏻", color = Color.White)
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(47.dp)
+                .background(xpBlue)
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("🔑 Log Off", color = Color.White, fontSize = 12.sp)
+            Spacer(Modifier.width(16.dp))
+            Text("⏻ Turn Off Computer", color = Color.White, fontSize = 12.sp)
         }
     }
 }
 
 @Composable
+private fun StartMenuItem(icon: String, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(icon, fontSize = 22.sp)
+        Spacer(Modifier.width(9.dp))
+        Text(label, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun RightMenuItem(icon: String, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(icon, fontSize = 16.sp)
+        Spacer(Modifier.width(7.dp))
+        Text(label, color = Color(0xFF163C73), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
 private fun XPWindow(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.width(310.dp).background(Color(0xFFECE9D8)).padding(3.dp)) {
-        Row(Modifier.fillMaxWidth().background(Color(0xFF0A56D8)).padding(7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold)
+    Column(
+        modifier
+            .width(316.dp)
+            .shadow(10.dp)
+            .background(Color(0xFFECE9D8))
+            .border(2.dp, Color(0xFF245EDB))
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(31.dp)
+                .background(
+                    Brush.horizontalGradient(listOf(Color(0xFF0A56D8), Color(0xFF3A8AF1)))
+                )
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Spacer(Modifier.weight(1f))
+            Box(
+                Modifier
+                    .size(20.dp)
+                    .background(Color(0xFFE95B45), RoundedCornerShape(2.dp)),
+                contentAlignment = Alignment.Center
+            ) { Text("×", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
         }
         Column(Modifier.padding(18.dp), content = content)
     }
@@ -140,5 +374,9 @@ private fun Clock() {
             now = Date()
         }
     }
-    Text(SimpleDateFormat("h:mm a", Locale.getDefault()).format(now), color = Color.White, modifier = Modifier.padding(horizontal = 14.dp))
+    Text(
+        SimpleDateFormat("h:mm a", Locale.getDefault()).format(now),
+        color = Color.White,
+        fontSize = 12.sp
+    )
 }
