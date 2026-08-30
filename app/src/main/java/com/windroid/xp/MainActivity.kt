@@ -81,6 +81,21 @@ private fun defaultXpAppIcon(context: Context, packageName: String, label: Strin
     val pkg = packageName.lowercase()
     val name = label.lowercase()
 
+    // App replacements live in icons/apps and are named after the Android app.
+    // Normalize case/spaces/punctuation so adding a new icon usually needs zero Kotlin changes.
+    val normalizedLabel = name.replace(Regex("[^a-z0-9]"), "")
+    val appNamedIcon = listAssetImages(context, "icons/apps").firstOrNull { file ->
+        val base = file.substringAfter("::", file).substringAfterLast('/').substringBeforeLast('.').lowercase()
+        val normalizedFile = base.replace(Regex("[^a-z0-9]"), "")
+        normalizedFile == normalizedLabel ||
+            (name == "google home" && normalizedFile == "home") ||
+            (name.contains("baby plus") && normalizedFile == "babyplus") ||
+            (name.contains("1kosmos") && normalizedFile == "1kosmos")
+    }
+    if (appNamedIcon != null) {
+        loadAssetImage(context, "icons/apps", appNamedIcon)?.let { return it }
+    }
+
     val asset = when {
         pkg in setOf(
             "com.android.chrome",
@@ -149,7 +164,6 @@ private fun defaultXpAppIcon(context: Context, packageName: String, label: Strin
 
     return asset?.let { loadAssetImage(context, "icons", it) }
 }
-
 private fun launchApp(context: Context, app: LaunchableApp) {
     context.packageManager.getLaunchIntentForPackage(app.packageName)?.let { intent ->
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
@@ -167,19 +181,23 @@ private fun openAppInfo(context: Context, packageName: String) {
 private fun listAssetImages(context: Context, folder: String): List<String> {
     val allowed = setOf("png", "jpg", "jpeg", "webp")
     val results = mutableListOf<String>()
-    return try {
-        context.assets.list(folder)?.forEach { fileName ->
-            val ext = fileName.substringAfterLast('.', "").lowercase()
+
+    fun scan(assetFolder: String, relativePrefix: String = "") {
+        val children = try { context.assets.list(assetFolder)?.toList().orEmpty() } catch (_: Exception) { emptyList() }
+        for (name in children) {
+            val full = "$assetFolder/$name"
+            val relative = if (relativePrefix.isBlank()) name else "$relativePrefix/$name"
+            val ext = name.substringAfterLast('.', "").lowercase()
             when {
-                ext in allowed -> results.add(fileName)
-                folder == "icons" && ext == "zip" -> {
+                ext in allowed -> results.add(relative)
+                ext == "zip" -> {
                     try {
-                        context.assets.open("$folder/$fileName").use { raw ->
+                        context.assets.open(full).use { raw ->
                             java.util.zip.ZipInputStream(raw).use { zip ->
                                 var entry = zip.nextEntry
                                 while (entry != null) {
                                     if (!entry.isDirectory && entry.name.substringAfterLast('.', "").lowercase() in allowed) {
-                                        results.add("$fileName::${entry.name}")
+                                        results.add("$relative::${entry.name}")
                                     }
                                     zip.closeEntry()
                                     entry = zip.nextEntry
@@ -188,49 +206,71 @@ private fun listAssetImages(context: Context, folder: String): List<String> {
                         }
                     } catch (_: Exception) { }
                 }
+                ext.isBlank() -> scan(full, relative)
             }
         }
+    }
+
+    return try {
+        scan(folder)
         results.sortedBy { it.substringAfter("::", it).lowercase() }
     } catch (_: Exception) {
         emptyList()
     }
 }
-
 private val assetImageCache = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap?>()
 
 private fun loadAssetImage(context: Context, folder: String, fileName: String?): ImageBitmap? {
     if (fileName.isNullOrBlank()) return null
     val key = "$folder::$fileName"
     if (assetImageCache.containsKey(key)) return assetImageCache[key]
+
+    fun candidatePaths(name: String): List<String> {
+        if (folder != "icons" || name.contains('/')) return listOf("$folder/$name")
+        // Compatibility for preferences and registry entries saved before the folder migration.
+        return listOf("icons/$name", "icons/xp/$name", "icons/apps/$name", "icons/ui/$name")
+    }
+
     val image = try {
         if (fileName.contains("::")) {
             val zipName = fileName.substringBefore("::")
             val entryName = fileName.substringAfter("::")
             var found: ImageBitmap? = null
-            context.assets.open("$folder/$zipName").use { raw ->
-                java.util.zip.ZipInputStream(raw).use { zip ->
-                    var entry = zip.nextEntry
-                    while (entry != null) {
-                        if (!entry.isDirectory && entry.name == entryName) {
-                            val bytes = java.io.ByteArrayOutputStream()
-                            zip.copyTo(bytes)
-                            found = BitmapFactory.decodeByteArray(bytes.toByteArray(), 0, bytes.size())?.asImageBitmap()
-                            break
+            for (path in candidatePaths(zipName)) {
+                try {
+                    context.assets.open(path).use { raw ->
+                        java.util.zip.ZipInputStream(raw).use { zip ->
+                            var entry = zip.nextEntry
+                            while (entry != null) {
+                                if (!entry.isDirectory && entry.name == entryName) {
+                                    val bytes = java.io.ByteArrayOutputStream()
+                                    zip.copyTo(bytes)
+                                    found = BitmapFactory.decodeByteArray(bytes.toByteArray(), 0, bytes.size())?.asImageBitmap()
+                                    break
+                                }
+                                zip.closeEntry()
+                                entry = zip.nextEntry
+                            }
                         }
-                        zip.closeEntry()
-                        entry = zip.nextEntry
                     }
-                }
+                } catch (_: Exception) { }
+                if (found != null) break
             }
             found
         } else {
-            context.assets.open("$folder/$fileName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+            var found: ImageBitmap? = null
+            for (path in candidatePaths(fileName)) {
+                try {
+                    found = context.assets.open(path).use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+                } catch (_: Exception) { }
+                if (found != null) break
+            }
+            found
         }
     } catch (_: Exception) { null }
     if (image != null) assetImageCache[key] = image
     return image
 }
-
 private fun resolveIntentIcon(context: Context, intent: Intent): ImageBitmap? {
     return try {
         val info = context.packageManager.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY) ?: return null
@@ -242,7 +282,7 @@ private fun resolveIntentIcon(context: Context, intent: Intent): ImageBitmap? {
 
 private fun loadStartButtonImage(context: Context): ImageBitmap? {
     return try {
-        val decoded = context.assets.open("icons/start_button.png").use { BitmapFactory.decodeStream(it) } ?: return null
+        val decoded = context.assets.open("icons/ui/start_button.png").use { BitmapFactory.decodeStream(it) } ?: return null
         val bitmap = decoded.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
         val width = bitmap.width
         val height = bitmap.height
@@ -288,7 +328,7 @@ private fun loadStartButtonImage(context: Context): ImageBitmap? {
         }
         bitmap.asImageBitmap()
     } catch (_: Exception) {
-        loadAssetImage(context, "icons", "start_button.png")
+        loadAssetImage(context, "icons", "ui/start_button.png")
     }
 }
 
@@ -381,7 +421,7 @@ fun WindroidDesktop(context: Context) {
     val iconFiles = remember {
         listAssetImages(context, "icons").filterNot {
             val n = it.substringAfter("::", it).substringAfterLast("/").lowercase()
-            n == "start_button.png" || n == "close_button.png" || n.contains("button") || n.contains("cursor")
+            it.startsWith("ui/") || n == "start_button.png" || n == "close_button.png" || n.contains("button") || n.contains("cursor")
         }
     }
     val startButtonImage = remember { loadStartButtonImage(context) }
