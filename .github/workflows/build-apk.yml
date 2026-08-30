@@ -5,6 +5,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+env:
+  VERSION_CODE: ${{ github.run_number }}
+  VERSION_NAME: 0.2.${{ github.run_number }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,11 +30,63 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        run: gradle assembleDebug
+      - name: Detect signing configuration
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.WINDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Upload APK
+      - name: Restore signing keystore
+        if: steps.signing.outputs.configured == 'true'
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.WINDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/windroid-release.jks"
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          WINDROID_KEYSTORE_PATH: ${{ runner.temp }}/windroid-release.jks
+          WINDROID_KEYSTORE_PASSWORD: ${{ secrets.WINDROID_KEYSTORE_PASSWORD }}
+          WINDROID_KEY_ALIAS: ${{ secrets.WINDROID_KEY_ALIAS }}
+          WINDROID_KEY_PASSWORD: ${{ secrets.WINDROID_KEY_PASSWORD }}
+        run: gradle assembleRelease
+
+      - name: Prepare signed APK
+        if: steps.signing.outputs.configured == 'true'
+        run: cp app/build/outputs/apk/release/app-release.apk Windroid-XP.apk
+
+      - name: Upload updateable signed APK
+        if: steps.signing.outputs.configured == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Windroid-XP-debug
+          name: Windroid-XP-updateable-${{ env.VERSION_NAME }}
+          path: Windroid-XP.apk
+
+      - name: Publish GitHub release
+        if: steps.signing.outputs.configured == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION_NAME }}
+          name: Windroid XP ${{ env.VERSION_NAME }}
+          generate_release_notes: true
+          make_latest: true
+          files: Windroid-XP.apk
+
+      - name: Build fallback debug APK
+        if: steps.signing.outputs.configured != 'true'
+        run: gradle assembleDebug
+
+      - name: Upload fallback debug APK
+        if: steps.signing.outputs.configured != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windroid-XP-DEBUG-NOT-UPDATEABLE
           path: app/build/outputs/apk/debug/app-debug.apk
