@@ -16,6 +16,22 @@ android {
         versionName = System.getenv('VERSION_NAME') ?: '0.2.0'
     }
 
+    flavorDimensions += 'channel'
+    productFlavors {
+        stable {
+            dimension 'channel'
+            manifestPlaceholders = [appLabel: 'Windroid XP']
+            buildConfigField 'String', 'UPDATE_CHANNEL', '"stable"'
+        }
+        dev {
+            dimension 'channel'
+            applicationIdSuffix '.dev'
+            versionNameSuffix '-dev'
+            manifestPlaceholders = [appLabel: 'Windroid XP Dev']
+            buildConfigField 'String', 'UPDATE_CHANNEL', '"dev"'
+        }
+    }
+
     signingConfigs {
         release {
             def keystorePath = System.getenv('WINDROID_KEYSTORE_PATH')
