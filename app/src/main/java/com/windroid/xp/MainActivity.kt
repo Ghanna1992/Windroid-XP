@@ -63,15 +63,91 @@ private fun installedApps(context: Context): List<LaunchableApp> {
     return pm.queryIntentActivities(intent, 0)
         .filter { it.activityInfo.packageName != context.packageName }
         .map { info ->
-            val icon = try { info.loadIcon(pm).toBitmap(96, 96).asImageBitmap() } catch (_: Exception) { null }
+            val label = info.loadLabel(pm).toString()
+            val packageName = info.activityInfo.packageName
+            val realIcon = try { info.loadIcon(pm).toBitmap(96, 96).asImageBitmap() } catch (_: Exception) { null }
+            val icon = defaultXpAppIcon(context, packageName, label) ?: realIcon
             LaunchableApp(
-                label = info.loadLabel(pm).toString(),
-                packageName = info.activityInfo.packageName,
+                label = label,
+                packageName = packageName,
                 icon = icon
             )
         }
         .distinctBy { it.packageName }
         .sortedBy { it.label.lowercase() }
+}
+
+private fun defaultXpAppIcon(context: Context, packageName: String, label: String): ImageBitmap? {
+    val pkg = packageName.lowercase()
+    val name = label.lowercase()
+
+    val asset = when {
+        pkg in setOf(
+            "com.android.chrome",
+            "com.opera.browser",
+            "com.opera.gx",
+            "org.mozilla.firefox",
+            "com.microsoft.emmx",
+            "com.sec.android.app.sbrowser"
+        ) || name in setOf("chrome", "opera", "opera gx", "firefox", "microsoft edge", "samsung internet") ->
+            "Internet Explorer 6.png"
+
+        pkg in setOf(
+            "com.google.android.gm",
+            "com.samsung.android.email.provider",
+            "com.samsung.android.email.ui"
+        ) || name in setOf("gmail", "email", "samsung email") ->
+            "Outlook Express.png"
+
+        pkg == "com.google.android.youtube" || name == "youtube" ->
+            "Windows Media Player 10.png"
+
+        pkg in setOf(
+            "com.sec.android.gallery3d",
+            "com.google.android.apps.photos"
+        ) || name in setOf("gallery", "photos", "google photos") ->
+            "Windows Picture and Fax Viewer.png"
+
+        pkg in setOf(
+            "com.sec.android.app.myfiles",
+            "com.google.android.apps.nbu.files"
+        ) || name in setOf("my files", "files", "files by google") ->
+            "Explorer.png"
+
+        pkg in setOf(
+            "com.sec.android.app.popupcalculator",
+            "com.google.android.calculator"
+        ) || name == "calculator" ->
+            "Calculator.png"
+
+        pkg in setOf(
+            "com.sec.android.app.camera",
+            "com.google.android.googlecamera"
+        ) || name == "camera" ->
+            "Digital Camera.png"
+
+        pkg in setOf(
+            "com.samsung.android.app.contacts",
+            "com.google.android.contacts"
+        ) || name == "contacts" ->
+            "Address Book.png"
+
+        pkg in setOf(
+            "com.google.android.apps.messaging",
+            "com.samsung.android.messaging"
+        ) || name == "messages" ->
+            "Windows Messenger.png"
+
+        pkg in setOf(
+            "com.samsung.android.dialer",
+            "com.google.android.dialer"
+        ) || name in setOf("phone", "dialer") ->
+            "Phone.png"
+
+        else -> null
+    }
+
+    return asset?.let { loadAssetImage(context, "icons", it) }
 }
 
 private fun launchApp(context: Context, app: LaunchableApp) {
@@ -215,7 +291,8 @@ private fun iconPrefKey(id: String) = "custom_icon_$id"
 private val XP_ICON_REGISTRY = mapOf(
     "computer" to "My Computer.png",
     "documents" to "My Documents.png",
-    "recycle" to "Recycle Bin.png",
+    "internet" to "Internet Explorer 6.png",
+    "recycle" to "Recycle Bin (empty).png",
     "control" to "Control Panel.png",
     "appearance" to "Appearance.png",
     "programs" to "Change or Remove Programs.png",
@@ -225,7 +302,7 @@ private val XP_ICON_REGISTRY = mapOf(
     "storage" to "Hard Disk.png",
     "search" to "Search.png",
     "run" to "Run.png",
-    "update" to "Automatic Updates.png",
+    "update" to "Windows Update.png",
     "user" to "User Accounts.png"
 )
 
@@ -234,7 +311,7 @@ private fun xpIcon(context: Context, key: String): ImageBitmap? =
 
 private fun openDefaultBrowser(context: Context) {
     try {
-        openDefaultBrowser(context)
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")))
     } catch (_: Exception) {
         context.startActivity(Intent(Settings.ACTION_SETTINGS))
     }
@@ -415,32 +492,34 @@ fun WindroidDesktop(context: Context) {
                             val itemIndex = columnIndex * rowsPerColumn + rowIndex
                             if (itemIndex < totalItems) {
                                 when (itemIndex) {
-                                    0 -> DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_my_computer", "🖥️", "My Computer") {
-                                        computerOpen = true; startOpen = false
-                                    }
-                                    1 -> DesktopResolvedBuiltInIcon(
+                                    0 -> DesktopSystemShortcut(
                                         context, prefs, customizationVersion,
-                                        "builtin_my_documents", "📁", "My Documents", defaultFileIcon
-                                    ) {
-                                        startOpen = false
-                                        try {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_OPEN_DOCUMENT)
-                                                    .addCategory(Intent.CATEGORY_OPENABLE)
-                                                    .setType("*/*")
-                                            )
-                                        } catch (_: Exception) {
-                                            context.startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS))
-                                        }
-                                    }
-                                    2 -> DesktopResolvedBuiltInIcon(
+                                        "builtin_my_computer", "computer", "🖥️", "My Computer",
+                                        onClick = { computerOpen = true; startOpen = false },
+                                        onCustomize = { startOpen = false; settingsOpen = true },
+                                        onReset = { setIcon("builtin_my_computer", null) }
+                                    )
+                                    1 -> DesktopSystemShortcut(
                                         context, prefs, customizationVersion,
-                                        "builtin_internet", "🌐", "Internet Explorer", defaultBrowserIcon
-                                    ) {
-                                        startOpen = false
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")))
-                                    }
-                                    3 -> DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_recycle_bin", "🗑️", "Recycle Bin") { startOpen = false; recycleOpen = true }
+                                        "builtin_my_documents", "documents", "📁", "My Documents",
+                                        onClick = { startOpen = false; openDocuments(context) },
+                                        onCustomize = { startOpen = false; settingsOpen = true },
+                                        onReset = { setIcon("builtin_my_documents", null) }
+                                    )
+                                    2 -> DesktopSystemShortcut(
+                                        context, prefs, customizationVersion,
+                                        "builtin_internet", "internet", "🌐", "Internet Explorer",
+                                        onClick = { startOpen = false; openDefaultBrowser(context) },
+                                        onCustomize = { startOpen = false; settingsOpen = true },
+                                        onReset = { setIcon("builtin_internet", null) }
+                                    )
+                                    3 -> DesktopSystemShortcut(
+                                        context, prefs, customizationVersion,
+                                        "builtin_recycle_bin", "recycle", "🗑️", "Recycle Bin",
+                                        onClick = { startOpen = false; recycleOpen = true },
+                                        onCustomize = { startOpen = false; settingsOpen = true },
+                                        onReset = { setIcon("builtin_recycle_bin", null) }
+                                    )
                                     else -> {
                                         val app = desktopApps[itemIndex - 4]
                                         DesktopAppIcon(
@@ -556,8 +635,20 @@ fun WindroidDesktop(context: Context) {
         }
 
         if (updateWindowOpen) {
+            Box(
+                Modifier.fillMaxSize().clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) { }
+            )
             XPWindow("Windows Update", Modifier.align(Alignment.Center), onClose = { updateWindowOpen = false }) {
-                Text("🛡️  Automatic Updates", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    xpIcon(context, "update")?.let { icon ->
+                        Image(bitmap = icon, contentDescription = null, modifier = Modifier.size(26.dp), contentScale = ContentScale.Fit)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Automatic Updates", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
                 Spacer(Modifier.height(10.dp))
                 Text(updateStatus, fontSize = 13.sp)
                 updateInfo?.notes?.takeIf { it.isNotBlank() }?.let { notes ->
@@ -598,6 +689,12 @@ fun WindroidDesktop(context: Context) {
         }
 
         if (startOpen) {
+            Box(
+                Modifier.fillMaxSize().clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) { startOpen = false }
+            )
             StartMenu(
                 apps = apps,
                 recentApps = launchedApps,
@@ -660,7 +757,7 @@ fun WindroidDesktop(context: Context) {
                     val custom = remember(customizationVersion, app.packageName) {
                         loadAssetImage(context, "icons", prefs.getString(iconPrefKey("app_${app.packageName}"), null))
                     }
-                    TaskButton(custom ?: app.icon, "▣", app.label) { startOpen = false; launchApp(context, app) }
+                    TaskButton(custom ?: app.icon, "▣", app.label) { openAndroidApp(app) }
                 }
             }
 
@@ -718,6 +815,64 @@ private fun DesktopResolvedBuiltInIcon(
         loadAssetImage(context, "icons", prefs.getString(iconPrefKey(id), null))
     }
     DesktopIcon(custom ?: resolvedIcon, fallback, label, onClick)
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DesktopSystemShortcut(
+    context: Context,
+    prefs: android.content.SharedPreferences,
+    version: Int,
+    id: String,
+    registryKey: String,
+    fallback: String,
+    label: String,
+    onClick: () -> Unit,
+    onCustomize: () -> Unit,
+    onReset: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val customName = remember(id, version) { prefs.getString(iconPrefKey(id), null) }
+    val customIcon = remember(id, version, customName) { loadAssetImage(context, "icons", customName) }
+    val icon = customIcon ?: xpIcon(context, registryKey)
+
+    Box {
+        Column(
+            Modifier.width(86.dp).combinedClickable(
+                onClick = onClick,
+                onLongClick = { menuOpen = true }
+            ),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (icon != null) {
+                Image(bitmap = icon, contentDescription = label, modifier = Modifier.size(48.dp), contentScale = ContentScale.Fit)
+            } else {
+                Text(fallback, fontSize = 38.sp)
+            }
+            Spacer(Modifier.height(3.dp))
+            Text(label, color = Color.White, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+
+        if (menuOpen) {
+            androidx.compose.ui.window.Popup(
+                alignment = Alignment.TopStart,
+                offset = androidx.compose.ui.unit.IntOffset(55, 28),
+                onDismissRequest = { menuOpen = false },
+                properties = androidx.compose.ui.window.PopupProperties(focusable = true)
+            ) {
+                Column(
+                    Modifier.width(150.dp).background(Color(0xFFFFF8E7)).border(1.dp, Color(0xFF777777)).padding(4.dp)
+                ) {
+                    Text("Open", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false; onClick() }.padding(7.dp), fontSize = 12.sp)
+                    Text("Change Icon...", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false; onCustomize() }.padding(7.dp), fontSize = 12.sp)
+                    if (customName != null) {
+                        Text("Reset Icon", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false; onReset() }.padding(7.dp), fontSize = 12.sp)
+                    }
+                    Text("Cancel", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false }.padding(7.dp), fontSize = 12.sp)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1005,16 +1160,17 @@ private fun XPSystemTray(context: Context) {
     var expanded by remember { mutableStateOf(false) }
 
     Row(
-        Modifier.fillMaxHeight().width(82.dp).padding(horizontal = 2.dp),
+        Modifier.fillMaxHeight().width(72.dp).padding(end = 2.dp),
+        horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier.size(18.dp).clickable { expanded = true },
+            Modifier.size(17.dp).clickable { expanded = true },
             contentAlignment = Alignment.Center
         ) {
             Text("⌃", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.width(2.dp))
+        Spacer(Modifier.width(1.dp))
         Clock()
     }
 
@@ -1161,7 +1317,7 @@ private fun StartMenu(
                     RightMenuAssetItem(context, "appearance", "Appearance") { onOpenAppearance() }
                     RightMenuAssetItem(context, "settings", "Android Settings") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                     RightMenuAssetItem(context, "update", "Windows Update") { onCheckUpdates() }
-                    RightMenuItem("🔍", "Search") {
+                    RightMenuAssetItem(context, "search", "Search") {
                         showSearch = true
                         showAllPrograms = false
                         contextApp = null
@@ -1193,8 +1349,22 @@ private fun StartMenu(
                         .border(1.dp, Color(0xFF7F9DB9)).padding(horizontal = 8.dp, vertical = 7.dp)
                 )
                 Spacer(Modifier.height(8.dp))
-                val results = apps.filter {
-                    searchQuery.isBlank() || it.label.contains(searchQuery, ignoreCase = true)
+                val normalizedQuery = searchQuery.trim()
+                val results = if (normalizedQuery.isBlank()) {
+                    apps
+                } else {
+                    apps.filter {
+                        it.label.contains(normalizedQuery, ignoreCase = true) ||
+                            it.packageName.contains(normalizedQuery, ignoreCase = true)
+                    }.sortedWith(
+                        compareBy<LaunchableApp> {
+                            when {
+                                it.label.equals(normalizedQuery, ignoreCase = true) -> 0
+                                it.label.startsWith(normalizedQuery, ignoreCase = true) -> 1
+                                else -> 2
+                            }
+                        }.thenBy { it.label.lowercase() }
+                    )
                 }
                 Column(Modifier.weight(1f, fill = false).heightIn(max = 330.dp).verticalScroll(rememberScrollState())) {
                     if (results.isEmpty()) {
@@ -1460,13 +1630,11 @@ private fun Clock() {
             now = Date()
         }
     }
-    Box(Modifier.width(58.dp), contentAlignment = Alignment.CenterEnd) {
-        Text(
-            SimpleDateFormat("h:mm a", Locale.getDefault()).format(now),
-            color = Color.White,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Normal,
-            maxLines = 1
-        )
-    }
+    Text(
+        SimpleDateFormat("h:mm a", Locale.getDefault()).format(now),
+        color = Color.White,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Normal,
+        maxLines = 1
+    )
 }
