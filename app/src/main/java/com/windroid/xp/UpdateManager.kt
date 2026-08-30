@@ -12,15 +12,10 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URL
 
-/**
- * Simple store-free updater.
- *
- * The default endpoint is GitHub Releases. It works for public release repositories.
- * If the source repository stays private, point RELEASE_API_URL at a public release-only
- * repository later; no other updater code needs to change.
- */
 object UpdateManager {
     private const val RELEASE_API_URL =
         "https://api.github.com/repos/Ghanna1992/Windroid-XP/releases/latest"
@@ -31,9 +26,16 @@ object UpdateManager {
         val notes: String
     )
 
-    suspend fun checkForUpdate(): UpdateInfo? = withContext(Dispatchers.IO) {
+    sealed class CheckResult {
+        data class UpdateAvailable(val update: UpdateInfo) : CheckResult()
+        data object UpToDate : CheckResult()
+        data class Failed(val message: String) : CheckResult()
+    }
+
+    suspend fun checkForUpdate(): CheckResult = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
         try {
-            val connection = (URL(RELEASE_API_URL).openConnection() as HttpURLConnection).apply {
+            connection = (URL(RELEASE_API_URL).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 8000
                 readTimeout = 8000
@@ -41,20 +43,23 @@ object UpdateManager {
                 setRequestProperty("User-Agent", "Windroid-XP/${BuildConfig.VERSION_NAME}")
             }
 
-            if (connection.responseCode !in 200..299) {
-                connection.disconnect()
-                return@withContext null
+            val response = connection.responseCode
+            if (response !in 200..299) {
+                return@withContext CheckResult.Failed("GitHub returned error $response. Try again later.")
             }
 
             val json = connection.inputStream.bufferedReader().use { it.readText() }
-            connection.disconnect()
             val release = JSONObject(json)
             val latest = release.optString("tag_name").removePrefix("v")
-            if (latest.isBlank() || !isNewer(latest, BuildConfig.VERSION_NAME)) {
-                return@withContext null
+            if (latest.isBlank()) {
+                return@withContext CheckResult.Failed("The update server returned an invalid release.")
+            }
+            if (!isNewer(latest, BuildConfig.VERSION_NAME)) {
+                return@withContext CheckResult.UpToDate
             }
 
-            val assets = release.optJSONArray("assets") ?: return@withContext null
+            val assets = release.optJSONArray("assets")
+                ?: return@withContext CheckResult.Failed("The latest release has no downloadable APK.")
             var downloadUrl: String? = null
             for (i in 0 until assets.length()) {
                 val asset = assets.getJSONObject(i)
@@ -64,10 +69,18 @@ object UpdateManager {
                 }
             }
 
-            if (downloadUrl.isNullOrBlank()) return@withContext null
-            UpdateInfo(latest, downloadUrl, release.optString("body"))
-        } catch (_: Exception) {
-            null
+            if (downloadUrl.isNullOrBlank()) {
+                return@withContext CheckResult.Failed("The latest release is missing Windroid-XP.apk.")
+            }
+            CheckResult.UpdateAvailable(UpdateInfo(latest, downloadUrl, release.optString("body")))
+        } catch (_: UnknownHostException) {
+            CheckResult.Failed("No internet connection. Check Wi-Fi or mobile data and try again.")
+        } catch (_: SocketTimeoutException) {
+            CheckResult.Failed("The update server took too long to respond. Try again.")
+        } catch (e: Exception) {
+            CheckResult.Failed("Unable to check for updates: ${e.javaClass.simpleName}")
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -95,7 +108,6 @@ object UpdateManager {
         }
     }
 
-    /** Returns true when the Android package installer was opened. */
     fun installUpdate(context: Context, apk: File): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
