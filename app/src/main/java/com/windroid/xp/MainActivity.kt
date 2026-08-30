@@ -196,12 +196,17 @@ private fun listAssetImages(context: Context, folder: String): List<String> {
     }
 }
 
+private val assetImageCache = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap?>()
+
 private fun loadAssetImage(context: Context, folder: String, fileName: String?): ImageBitmap? {
     if (fileName.isNullOrBlank()) return null
-    return try {
+    val key = "$folder::$fileName"
+    if (assetImageCache.containsKey(key)) return assetImageCache[key]
+    val image = try {
         if (fileName.contains("::")) {
             val zipName = fileName.substringBefore("::")
             val entryName = fileName.substringAfter("::")
+            var found: ImageBitmap? = null
             context.assets.open("$folder/$zipName").use { raw ->
                 java.util.zip.ZipInputStream(raw).use { zip ->
                     var entry = zip.nextEntry
@@ -209,20 +214,21 @@ private fun loadAssetImage(context: Context, folder: String, fileName: String?):
                         if (!entry.isDirectory && entry.name == entryName) {
                             val bytes = java.io.ByteArrayOutputStream()
                             zip.copyTo(bytes)
-                            return BitmapFactory.decodeByteArray(bytes.toByteArray(), 0, bytes.size())?.asImageBitmap()
+                            found = BitmapFactory.decodeByteArray(bytes.toByteArray(), 0, bytes.size())?.asImageBitmap()
+                            break
                         }
                         zip.closeEntry()
                         entry = zip.nextEntry
                     }
                 }
             }
-            null
+            found
         } else {
             context.assets.open("$folder/$fileName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
         }
-    } catch (_: Exception) {
-        null
-    }
+    } catch (_: Exception) { null }
+    assetImageCache[key] = image
+    return image
 }
 
 private fun resolveIntentIcon(context: Context, intent: Intent): ImageBitmap? {
@@ -341,6 +347,11 @@ fun WindroidDesktop(context: Context) {
     var controlPanelOpen by remember { mutableStateOf(false) }
     var recycleOpen by remember { mutableStateOf(false) }
     var runOpen by remember { mutableStateOf(false) }
+    var aboutOpen by remember { mutableStateOf(false) }
+    var resetConfirmOpen by remember { mutableStateOf(false) }
+    var setupComplete by remember { mutableStateOf(prefs.getBoolean("setup_complete", false)) }
+    val previousStartupComplete = remember { prefs.getBoolean("startup_completed", true) }
+    var recoveryNotice by remember { mutableStateOf(!previousStartupComplete && setupComplete) }
 
     val savedRecentPackages = remember {
         prefs.getString("recent_apps", "").orEmpty()
@@ -367,7 +378,10 @@ fun WindroidDesktop(context: Context) {
 
     val backgrounds = remember { listAssetImages(context, "backgrounds") }
     val iconFiles = remember {
-        listAssetImages(context, "icons").filterNot { it == "start_button.png" || it == "close_button.png" }
+        listAssetImages(context, "icons").filterNot {
+            val n = it.substringAfter("::", it).substringAfterLast("/").lowercase()
+            n == "start_button.png" || n == "close_button.png" || n.contains("button") || n.contains("cursor")
+        }
     }
     val startButtonImage = remember { loadStartButtonImage(context) }
     val defaultBrowserIcon = remember {
@@ -384,6 +398,11 @@ fun WindroidDesktop(context: Context) {
     var updateStatus by remember { mutableStateOf("") }
     var downloadedUpdate by remember { mutableStateOf<File?>(null) }
     val updateScope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        prefs.edit().putBoolean("startup_completed", false).apply()
+        kotlinx.coroutines.delay(1800)
+        prefs.edit().putBoolean("startup_completed", true).apply()
+    }
 
     fun saveRecentApps() {
         prefs.edit().putString(
@@ -411,6 +430,25 @@ fun WindroidDesktop(context: Context) {
         customizationVersion++
     }
 
+    fun resetWindroid() {
+        prefs.edit()
+            .remove("desktop_background")
+            .remove("desktop_apps")
+            .remove("removed_desktop_apps")
+            .remove("recent_apps")
+            .remove("user_name")
+            .remove("user_avatar")
+            .apply()
+        prefs.all.keys.filter { it.startsWith("custom_icon_") }.forEach { prefs.edit().remove(it).apply() }
+        selectedBackground = null
+        desktopPackages = emptySet()
+        removedDesktopPackages = emptySet()
+        launchedApps.clear()
+        userName = "User"
+        userAvatar = "🙂"
+        customizationVersion++
+    }
+
     fun setDesktopApp(packageName: String, enabled: Boolean) {
         desktopPackages = if (enabled) desktopPackages + packageName else desktopPackages - packageName
         removedDesktopPackages = if (enabled) removedDesktopPackages - packageName else removedDesktopPackages + packageName
@@ -425,33 +463,44 @@ fun WindroidDesktop(context: Context) {
         updateStatus = "Checking for updates..."
         if (manual) updateWindowOpen = true
         updateScope.launch {
-            val found = UpdateManager.checkForUpdate()
-            updateInfo = found
             downloadedUpdate = null
-            if (found != null) {
-                updateStatus = "Windroid XP ${found.versionName} is ready."
-                updateWindowOpen = true
-            } else if (manual) {
-                updateStatus = "Your computer is up to date."
-                updateWindowOpen = true
-            } else {
-                updateWindowOpen = false
+            when (val result = UpdateManager.checkForUpdate()) {
+                is UpdateManager.CheckResult.UpdateAvailable -> {
+                    updateInfo = result.update
+                    updateStatus = "Windroid XP ${result.update.versionName} is ready."
+                    updateWindowOpen = true
+                }
+                UpdateManager.CheckResult.UpToDate -> {
+                    updateInfo = null
+                    updateStatus = "Your computer is up to date."
+                    updateWindowOpen = manual
+                }
+                is UpdateManager.CheckResult.Failed -> {
+                    updateInfo = null
+                    updateStatus = result.message
+                    updateWindowOpen = manual
+                }
             }
         }
     }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(2500)
-        val found = UpdateManager.checkForUpdate()
-        if (found != null) {
-            updateInfo = found
-            updateStatus = "Windroid XP ${found.versionName} is ready."
-            updateWindowOpen = true
+        when (val result = UpdateManager.checkForUpdate()) {
+            is UpdateManager.CheckResult.UpdateAvailable -> {
+                updateInfo = result.update
+                updateStatus = "Windroid XP ${result.update.versionName} is ready."
+                updateWindowOpen = true
+            }
+            else -> Unit
         }
     }
 
     BackHandler {
         when {
+            resetConfirmOpen -> resetConfirmOpen = false
+            aboutOpen -> aboutOpen = false
+            recoveryNotice -> recoveryNotice = false
             runOpen -> runOpen = false
             recycleOpen -> recycleOpen = false
             controlPanelOpen -> controlPanelOpen = false
@@ -541,12 +590,16 @@ fun WindroidDesktop(context: Context) {
 
         if (computerOpen) {
             XPWindow("My Computer", Modifier.align(Alignment.Center), onClose = { computerOpen = false }) {
-                Text("Files Stored on This Computer", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Windroid XP ${BuildConfig.VERSION_NAME} • Android ${android.os.Build.VERSION.RELEASE}", fontSize = 10.sp, color = Color(0xFF555555))
                 Spacer(Modifier.height(10.dp))
+                Text("Files Stored on This Computer", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
                 XPSystemRow(context, "storage", "Internal Storage") { openDocuments(context) }
                 XPSystemRow(context, "documents", "My Documents") { openDocuments(context) }
                 XPSystemRow(context, "control", "Control Panel") { computerOpen = false; controlPanelOpen = true }
                 XPSystemRow(context, "settings", "Android Settings") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                XPSystemRow(context, "computer", "About Windroid XP") { computerOpen = false; aboutOpen = true }
                 Spacer(Modifier.height(10.dp))
                 XPActionButton("Close") { computerOpen = false }
             }
@@ -562,6 +615,8 @@ fun WindroidDesktop(context: Context) {
                 XPSystemRow(context, "user", "User Accounts") { controlPanelOpen = false; profileOpen = true }
                 XPSystemRow(context, "update", "Automatic Updates") { controlPanelOpen = false; checkForUpdates(true) }
                 XPSystemRow(context, "settings", "Android System Settings") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                XPSystemRow(context, "computer", "About Windroid XP") { controlPanelOpen = false; aboutOpen = true }
+                XPSystemRow(context, "back", "Restore Windroid Defaults") { resetConfirmOpen = true }
             }
         }
 
@@ -685,6 +740,64 @@ fun WindroidDesktop(context: Context) {
                     Spacer(Modifier.height(8.dp))
                 }
                 Text("Remind me later", color = Color(0xFF003399), fontSize = 12.sp, modifier = Modifier.clickable { updateWindowOpen = false })
+            }
+        }
+
+        if (!setupComplete) {
+            Box(Modifier.fillMaxSize().background(Color(0x88000000)))
+            FamilySetupWizard(
+                context = context,
+                userName = userName,
+                onNameChanged = { userName = it },
+                onFinish = {
+                    val safeName = userName.ifBlank { "User" }
+                    userName = safeName
+                    prefs.edit().putString("user_name", safeName).putBoolean("setup_complete", true).apply()
+                    setupComplete = true
+                },
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+
+        if (recoveryNotice) {
+            Box(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { })
+            XPWindow("Windroid XP", Modifier.align(Alignment.Center).width(320.dp), onClose = { recoveryNotice = false }) {
+                Text("Windroid XP recovered from an interrupted startup.", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(7.dp))
+                Text("Your Android apps and phone data were not changed. If something looks wrong, use Control Panel → Restore Windroid Defaults.", fontSize = 11.sp)
+                Spacer(Modifier.height(10.dp))
+                XPActionButton("OK") { recoveryNotice = false }
+            }
+        }
+
+        if (aboutOpen) {
+            Box(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { })
+            XPWindow("About Windroid XP", Modifier.align(Alignment.Center).width(330.dp), onClose = { aboutOpen = false }) {
+                Text("Windroid XP", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF003399))
+                Text("Version ${BuildConfig.VERSION_NAME}", fontSize = 12.sp)
+                Spacer(Modifier.height(9.dp))
+                Text("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}", fontSize = 11.sp)
+                Text("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})", fontSize = 11.sp)
+                Text("Installed apps detected: ${apps.size}", fontSize = 11.sp)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    XPActionButton("Check for Updates") { aboutOpen = false; checkForUpdates(true) }
+                    XPActionButton("Close") { aboutOpen = false }
+                }
+            }
+        }
+
+        if (resetConfirmOpen) {
+            Box(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { })
+            XPWindow("Restore Windroid Defaults", Modifier.align(Alignment.Center).width(330.dp), onClose = { resetConfirmOpen = false }) {
+                Text("Restore Windroid XP customization to defaults?", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(7.dp))
+                Text("This resets wallpaper, desktop app shortcuts, recent programs, username/avatar, and custom icon assignments. It does not uninstall apps or erase Android data.", fontSize = 11.sp)
+                Spacer(Modifier.height(11.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    XPActionButton("Restore Defaults") { resetWindroid(); resetConfirmOpen = false }
+                    XPActionButton("Cancel") { resetConfirmOpen = false }
+                }
             }
         }
 
@@ -1323,14 +1436,24 @@ private fun StartMenu(
                         contextApp = null
                     }
                     RightMenuAssetItem(context, "run", "Run...") { onOpenRun() }
-                    RightMenuItem("❓", "Help and Support") { }
+                    RightMenuAssetItem(context, "computer", "About Windroid XP") {
+                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = Uri.parse("package:${context.packageName}") })
+                    }
                 }
             }
 
             Row(Modifier.fillMaxWidth().height(47.dp).background(xpBlue).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 Text("🔑 Log Off", color = Color.White, fontSize = 12.sp)
                 Spacer(Modifier.width(16.dp))
-                Text("⏻ Turn Off Computer", color = Color.White, fontSize = 12.sp)
+                Text(
+                    "⏻ Turn Off Computer",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.clickable {
+                        try { context.startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
+                        catch (_: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                    }.padding(vertical = 8.dp)
+                )
             }
         }
 
@@ -1637,4 +1760,57 @@ private fun Clock() {
         fontWeight = FontWeight.Normal,
         maxLines = 1
     )
+}
+
+
+@Composable
+private fun FamilySetupWizard(
+    context: Context,
+    userName: String,
+    onNameChanged: (String) -> Unit,
+    onFinish: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var page by remember { mutableIntStateOf(0) }
+    XPWindow("Welcome to Windroid XP", modifier.width(350.dp), onClose = null) {
+        when (page) {
+            0 -> {
+                Text("Welcome to Windroid XP", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF003399))
+                Spacer(Modifier.height(8.dp))
+                Text("This replaces your Home screen with a Windows XP-style launcher. Your Android apps, photos, messages, and settings stay on the phone.", fontSize = 11.sp)
+                Spacer(Modifier.height(12.dp))
+                XPActionButton("Next") { page = 1 }
+            }
+            1 -> {
+                Text("Choose your account name", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                BasicTextField(
+                    value = userName,
+                    onValueChange = { onNameChanged(it.take(24)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().background(Color.White).border(1.dp, Color(0xFF7F9DB9)).padding(8.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    XPActionButton("Back") { page = 0 }
+                    XPActionButton("Next") { page = 2 }
+                }
+            }
+            else -> {
+                Text("Make Windroid XP your Home app", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("Android will show the Home-app chooser. Select Windroid XP if it is not already selected. You can always get back there from Start → Turn Off Computer.", fontSize = 11.sp)
+                Spacer(Modifier.height(10.dp))
+                XPActionButton("Open Home App Settings") {
+                    try { context.startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
+                    catch (_: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    XPActionButton("Back") { page = 1 }
+                    XPActionButton("Finish") { onFinish() }
+                }
+            }
+        }
+    }
 }
