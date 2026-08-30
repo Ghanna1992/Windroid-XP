@@ -28,18 +28,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reorganize icon library
-        shell: bash
-        run: python3 scripts/reorganize_icon_library.py
-
-      - name: Bake icon reorganization into source
+      - name: Finish app icon migration
         shell: bash
         run: |
+          mkdir -p app/src/main/assets/icons/apps
+          [ ! -f chatgpt.png ] || mv chatgpt.png app/src/main/assets/icons/apps/ChatGPT.png
+          [ ! -f discord.png ] || mv discord.png app/src/main/assets/icons/apps/Discord.png
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/com/windroid/xp/MainActivity.kt app/src/main/assets/icons chatgpt.png discord.png
+          git add -A chatgpt.png discord.png app/src/main/assets/icons/apps
           if ! git diff --cached --quiet; then
-            git commit -m "Reorganize icon library and enable app auto-mapping [skip ci]"
+            git commit -m "Move generated app icons into app library [skip ci]"
             git push
           fi
 
