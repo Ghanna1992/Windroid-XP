@@ -373,8 +373,6 @@ fun WindroidDesktop(context: Context) {
         }
     }
 
-    // A launcher should not finish/recreate itself when Back is pressed on the desktop.
-    // Back instead dismisses whichever Windroid surface is currently on top.
     BackHandler {
         when {
             runOpen -> runOpen = false
@@ -906,7 +904,7 @@ private fun AppearanceWindow(
                 SettingsChoice("🖥️", "Desktop Icons", "Assign individual images to Windroid shortcuts") { page = "desktopIcons" }
                 SettingsChoice("📦", "Applications", "Custom app icons and desktop shortcuts") { page = "apps" }
                 Spacer(Modifier.height(14.dp))
-                Text("Images added to the GitHub assets folders appear here automatically in the next build.", fontSize = 10.sp, color = Color(0xFF666666))
+                Text("Images added to the GitHub assets folders appear here automatically in the next build.", fontSize = 10.sp, color = Color(0xFF666666), modifier = Modifier.padding(8.dp))
                 Spacer(Modifier.height(12.dp))
                 XPActionButton("Close") { onClose() }
             }
@@ -1007,22 +1005,17 @@ private fun XPSystemTray(context: Context) {
     var expanded by remember { mutableStateOf(false) }
 
     Row(
-        Modifier.fillMaxHeight().width(112.dp)
-            .background(Brush.verticalGradient(listOf(Color(0xFF2F82D7), Color(0xFF1764B8))))
-            .border(width = 1.dp, color = Color(0xFF4C99E2))
-            .padding(horizontal = 6.dp),
+        Modifier.fillMaxHeight().width(82.dp).padding(horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier.size(24.dp).clickable { expanded = true },
+            Modifier.size(18.dp).clickable { expanded = true },
             contentAlignment = Alignment.Center
         ) {
-            Text("⌃", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            Text("⌃", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.width(7.dp))
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            Clock()
-        }
+        Spacer(Modifier.width(2.dp))
+        Clock()
     }
 
     if (expanded) {
@@ -1467,7 +1460,7 @@ private fun Clock() {
             now = Date()
         }
     }
-    Box(Modifier.width(72.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.width(58.dp), contentAlignment = Alignment.CenterEnd) {
         Text(
             SimpleDateFormat("h:mm a", Locale.getDefault()).format(now),
             color = Color.White,
