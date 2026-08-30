@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,11 +82,10 @@ private fun launchApp(context: Context, app: LaunchableApp) {
 }
 
 private fun openAppInfo(context: Context, packageName: String) {
-    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
         data = Uri.parse("package:$packageName")
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    context.startActivity(intent)
+    })
 }
 
 private fun listAssetImages(context: Context, folder: String): List<String> {
@@ -112,14 +113,26 @@ private fun iconPrefKey(id: String) = "custom_icon_$id"
 
 @Composable
 fun WindroidDesktop(context: Context) {
+    val prefs = remember { context.getSharedPreferences("windroid_prefs", Context.MODE_PRIVATE) }
+    val apps = remember { installedApps(context) }
+
     var startOpen by remember { mutableStateOf(false) }
     var computerOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var updateWindowOpen by remember { mutableStateOf(false) }
 
-    val apps = remember { installedApps(context) }
-    val launchedApps = remember { mutableStateListOf<LaunchableApp>() }
-    val prefs = remember { context.getSharedPreferences("windroid_prefs", Context.MODE_PRIVATE) }
+    val savedRecentPackages = remember {
+        prefs.getString("recent_apps", "").orEmpty()
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+    }
+    val launchedApps = remember(apps) {
+        mutableStateListOf<LaunchableApp>().apply {
+            savedRecentPackages.mapNotNull { pkg -> apps.firstOrNull { it.packageName == pkg } }.forEach { add(it) }
+        }
+    }
 
     var userName by remember { mutableStateOf(prefs.getString("user_name", "User") ?: "User") }
     var userAvatar by remember { mutableStateOf(prefs.getString("user_avatar", "🙂") ?: "🙂") }
@@ -130,17 +143,28 @@ fun WindroidDesktop(context: Context) {
     }
 
     val backgrounds = remember { listAssetImages(context, "backgrounds") }
-    val iconFiles = remember { listAssetImages(context, "icons") }
+    val iconFiles = remember {
+        listAssetImages(context, "icons").filterNot { it == "start_button.png" || it == "close_button.png" }
+    }
+    val startButtonImage = remember { loadAssetImage(context, "icons", "start_button.png") }
 
-    var updateWindowOpen by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateManager.UpdateInfo?>(null) }
     var updateStatus by remember { mutableStateOf("") }
     var downloadedUpdate by remember { mutableStateOf<File?>(null) }
     val updateScope = rememberCoroutineScope()
 
+    fun saveRecentApps() {
+        prefs.edit().putString(
+            "recent_apps",
+            launchedApps.take(12).joinToString("\n") { it.packageName }
+        ).apply()
+    }
+
     fun openAndroidApp(app: LaunchableApp) {
         launchedApps.removeAll { it.packageName == app.packageName }
         launchedApps.add(0, app)
+        while (launchedApps.size > 12) launchedApps.removeAt(launchedApps.lastIndex)
+        saveRecentApps()
         startOpen = false
         computerOpen = false
         profileOpen = false
@@ -187,6 +211,19 @@ fun WindroidDesktop(context: Context) {
             updateInfo = found
             updateStatus = "Windroid XP ${found.versionName} is ready."
             updateWindowOpen = true
+        }
+    }
+
+    // A launcher should not finish/recreate itself when Back is pressed on the desktop.
+    // Back instead dismisses whichever Windroid surface is currently on top.
+    BackHandler {
+        when {
+            updateWindowOpen -> updateWindowOpen = false
+            settingsOpen -> settingsOpen = false
+            profileOpen -> profileOpen = false
+            computerOpen -> computerOpen = false
+            startOpen -> startOpen = false
+            else -> Unit
         }
     }
 
@@ -335,12 +372,32 @@ fun WindroidDesktop(context: Context) {
             ), verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.fillMaxHeight().width(104.dp).background(
-                    Brush.verticalGradient(listOf(Color(0xFF55B747), Color(0xFF33952E), Color(0xFF257E25))),
-                    RoundedCornerShape(topEnd = 13.dp, bottomEnd = 13.dp)
-                ).clickable { startOpen = !startOpen; computerOpen = false; profileOpen = false; settingsOpen = false },
+                Modifier.fillMaxHeight().width(104.dp)
+                    .then(
+                        if (startButtonImage == null) Modifier.background(
+                            Brush.verticalGradient(listOf(Color(0xFF55B747), Color(0xFF33952E), Color(0xFF257E25))),
+                            RoundedCornerShape(topEnd = 13.dp, bottomEnd = 13.dp)
+                        ) else Modifier
+                    )
+                    .clickable {
+                        startOpen = !startOpen
+                        computerOpen = false
+                        profileOpen = false
+                        settingsOpen = false
+                    },
                 contentAlignment = Alignment.Center
-            ) { Text("⊞  start", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+            ) {
+                if (startButtonImage != null) {
+                    Image(
+                        bitmap = startButtonImage,
+                        contentDescription = "Start",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.FillBounds
+                    )
+                } else {
+                    Text("⊞  start", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
 
             Spacer(Modifier.width(5.dp))
             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
@@ -466,7 +523,7 @@ private fun AppearanceWindow(
                         val image = remember(file) { loadAssetImage(context, "icons", file) }
                         PickerRow(file, image) { onIconSelected(iconTarget!!, file); iconTarget = null }
                     }
-                    if (iconFiles.isEmpty()) Text("No images found in assets/icons yet.", fontSize = 11.sp, color = Color(0xFF666666), modifier = Modifier.padding(8.dp))
+                    if (iconFiles.isEmpty()) Text("No custom icon images found yet.", fontSize = 11.sp, color = Color(0xFF666666), modifier = Modifier.padding(8.dp))
                 }
                 Spacer(Modifier.height(8.dp))
                 XPActionButton("Back") { iconTarget = null }
@@ -646,6 +703,10 @@ private fun StartMenu(
     val xpBlue = Color(0xFF1D62C8)
     var showAllPrograms by remember { mutableStateOf(false) }
     var contextApp by remember { mutableStateOf<LaunchableApp?>(null) }
+
+    BackHandler(enabled = contextApp != null || showAllPrograms) {
+        if (contextApp != null) contextApp = null else showAllPrograms = false
+    }
 
     Box(modifier.width(350.dp).heightIn(max = 590.dp)) {
         Column(Modifier.fillMaxSize().shadow(8.dp).border(2.dp, Color(0xFF174EA6)).background(Color.White)) {
@@ -860,6 +921,9 @@ private fun XPWindow(
     onClose: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val context = LocalContext.current
+    val closeImage = remember { loadAssetImage(context, "icons", "close_button.png") }
+
     Column(modifier.width(316.dp).shadow(10.dp).background(Color(0xFFECE9D8)).border(2.dp, Color(0xFF245EDB))) {
         Row(
             Modifier.fillMaxWidth().height(31.dp)
@@ -870,11 +934,20 @@ private fun XPWindow(
             Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             Spacer(Modifier.weight(1f))
             val closeModifier = if (onClose != null) Modifier.clickable { onClose() } else Modifier
-            Box(
-                closeModifier.size(20.dp).background(if (onClose != null) Color(0xFFE95B45) else Color(0xFF999999), RoundedCornerShape(2.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("×", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            if (closeImage != null && onClose != null) {
+                Image(
+                    bitmap = closeImage,
+                    contentDescription = "Close",
+                    modifier = closeModifier.size(22.dp),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                Box(
+                    closeModifier.size(20.dp).background(if (onClose != null) Color(0xFFE95B45) else Color(0xFF999999), RoundedCornerShape(2.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("×", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
             }
         }
         Column(Modifier.padding(18.dp), content = content)
