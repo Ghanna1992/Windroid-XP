@@ -33,6 +33,9 @@ jobs:
       - name: Apply Windroid UI patch
         run: python3 scripts/patch_taskbar_ui.py
 
+      - name: Apply ZIP icons and default app patch
+        run: python3 scripts/patch_icon_zip_defaults.py
+
       - name: Detect signing configuration
         id: signing
         shell: bash
