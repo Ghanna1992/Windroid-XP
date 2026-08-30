@@ -36,6 +36,9 @@ jobs:
       - name: Apply ZIP icons and default app patch
         run: python3 scripts/patch_icon_zip_defaults.py
 
+      - name: Apply popup and tray fix
+        run: python3 scripts/fix_popup_tray.py
+
       - name: Detect signing configuration
         id: signing
         shell: bash
