@@ -16,7 +16,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -414,11 +416,56 @@ fun WindroidDesktop(context: Context) {
 
 @Composable
 private fun MovableDesktopItem(prefs: android.content.SharedPreferences, positionId: String, defaultX: Float, defaultY: Float, maxWidth: androidx.compose.ui.unit.Dp, maxHeight: androidx.compose.ui.unit.Dp, content: @Composable () -> Unit) {
-    val density = LocalDensity.current; val maxXPx = with(density) { (maxWidth - 88.dp).coerceAtLeast(0.dp).toPx() }; val maxYPx = with(density) { (maxHeight - 82.dp).coerceAtLeast(0.dp).toPx() }; val defaultXPx = with(density) { defaultX.dp.toPx() }; val defaultYPx = with(density) { defaultY.dp.toPx() }
-    val keyX = desktopPositionKey(positionId, "x"); val keyY = desktopPositionKey(positionId, "y")
-    var position by remember(positionId, maxXPx, maxYPx) { mutableStateOf(Offset(prefs.getFloat(keyX, defaultXPx).coerceIn(0f, maxXPx), prefs.getFloat(keyY, defaultYPx).coerceIn(0f, maxYPx))) }; var dragging by remember(positionId) { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val maxXPx = with(density) { (maxWidth - 88.dp).coerceAtLeast(0.dp).toPx() }
+    val maxYPx = with(density) { (maxHeight - 82.dp).coerceAtLeast(0.dp).toPx() }
+    val defaultXPx = with(density) { defaultX.dp.toPx() }
+    val defaultYPx = with(density) { defaultY.dp.toPx() }
+    val keyX = desktopPositionKey(positionId, "x")
+    val keyY = desktopPositionKey(positionId, "y")
+    var position by remember(positionId, maxXPx, maxYPx) {
+        mutableStateOf(Offset(prefs.getFloat(keyX, defaultXPx).coerceIn(0f, maxXPx), prefs.getFloat(keyY, defaultYPx).coerceIn(0f, maxYPx)))
+    }
+    var dragging by remember(positionId) { mutableStateOf(false) }
     fun save() { prefs.edit().putFloat(keyX, position.x).putFloat(keyY, position.y).apply() }
-    Box(Modifier.offset { IntOffset(position.x.roundToInt(), position.y.roundToInt()) }.zIndex(if (dragging) 100f else 0f).pointerInput(positionId, maxXPx, maxYPx) { detectDragGestures(onDragStart = { dragging = true }, onDragEnd = { dragging = false; save() }, onDragCancel = { dragging = false; save() }) { _, dragAmount -> position = Offset((position.x + dragAmount.x).coerceIn(0f, maxXPx), (position.y + dragAmount.y).coerceIn(0f, maxYPx)) } }) { content() }
+
+    Box(
+        Modifier
+            .offset { IntOffset(position.x.roundToInt(), position.y.roundToInt()) }
+            .zIndex(if (dragging) 100f else 0f)
+            .pointerInput(positionId, maxXPx, maxYPx) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val pointerId = down.id
+                    val start = down.position
+                    var last = start
+                    var moved = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                        if (!change.pressed) break
+                        val total = change.position - start
+                        if (!moved && total.getDistance() > viewConfiguration.touchSlop) {
+                            moved = true
+                            dragging = true
+                        }
+                        if (moved) {
+                            val delta = change.position - last
+                            position = Offset(
+                                (position.x + delta.x).coerceIn(0f, maxXPx),
+                                (position.y + delta.y).coerceIn(0f, maxYPx)
+                            )
+                            change.consume()
+                        }
+                        last = change.position
+                    }
+                    if (moved) {
+                        dragging = false
+                        save()
+                    }
+                }
+            }
+    ) { content() }
 }
 
 @Composable private fun WallpaperLayer(context: Context, selectedBackground: String?) { val image = remember(selectedBackground) { loadAssetImage(context, "backgrounds", selectedBackground ?: DEFAULT_DESKTOP_BACKGROUND) }; if (image != null) Image(bitmap = image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) else XPWallpaper() }
