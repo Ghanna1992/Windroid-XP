@@ -81,8 +81,6 @@ private fun defaultXpAppIcon(context: Context, packageName: String, label: Strin
     val pkg = packageName.lowercase()
     val name = label.lowercase()
 
-    // App replacements live in icons/apps and are named after the Android app.
-    // Normalize case/spaces/punctuation so adding a new icon usually needs zero Kotlin changes.
     val normalizedLabel = name.replace(Regex("[^a-z0-9]"), "")
     val appNamedIcon = listAssetImages(context, "icons/apps").firstOrNull { file ->
         val base = file.substringAfter("::", file).substringAfterLast('/').substringBeforeLast('.').lowercase()
@@ -164,6 +162,7 @@ private fun defaultXpAppIcon(context: Context, packageName: String, label: Strin
 
     return asset?.let { loadAssetImage(context, "icons", it) }
 }
+
 private fun launchApp(context: Context, app: LaunchableApp) {
     context.packageManager.getLaunchIntentForPackage(app.packageName)?.let { intent ->
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
@@ -218,6 +217,7 @@ private fun listAssetImages(context: Context, folder: String): List<String> {
         emptyList()
     }
 }
+
 private val assetImageCache = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap?>()
 
 private fun loadAssetImage(context: Context, folder: String, fileName: String?): ImageBitmap? {
@@ -227,7 +227,6 @@ private fun loadAssetImage(context: Context, folder: String, fileName: String?):
 
     fun candidatePaths(name: String): List<String> {
         if (folder != "icons" || name.contains('/')) return listOf("$folder/$name")
-        // Compatibility for preferences and registry entries saved before the folder migration.
         return listOf("icons/$name", "icons/xp/$name", "icons/apps/$name", "icons/ui/$name")
     }
 
@@ -271,6 +270,7 @@ private fun loadAssetImage(context: Context, folder: String, fileName: String?):
     if (image != null) assetImageCache[key] = image
     return image
 }
+
 private fun resolveIntentIcon(context: Context, intent: Intent): ImageBitmap? {
     return try {
         val info = context.packageManager.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY) ?: return null
@@ -349,7 +349,8 @@ private val XP_ICON_REGISTRY = mapOf(
     "search" to "Search.png",
     "run" to "Run.png",
     "update" to "Windows Update.png",
-    "user" to "User Accounts.png"
+    "user" to "User Accounts.png",
+    "power" to "Power.png"
 )
 
 private fun xpIcon(context: Context, key: String): ImageBitmap? =
@@ -416,6 +417,9 @@ fun WindroidDesktop(context: Context) {
     var removedDesktopPackages by remember {
         mutableStateOf(prefs.getStringSet("removed_desktop_apps", emptySet())?.toSet() ?: emptySet())
     }
+    var hiddenBuiltinShortcuts by remember {
+        mutableStateOf(prefs.getStringSet("hidden_builtin_shortcuts", emptySet())?.toSet() ?: emptySet())
+    }
 
     val backgrounds = remember { listAssetImages(context, "backgrounds") }
     val iconFiles = remember {
@@ -425,20 +429,12 @@ fun WindroidDesktop(context: Context) {
         }
     }
     val startButtonImage = remember { loadStartButtonImage(context) }
-    val defaultBrowserIcon = remember {
-        resolveIntentIcon(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")))
-    }
-    val defaultFileIcon = remember {
-        resolveIntentIcon(
-            context,
-            Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
-        )
-    }
 
     var updateInfo by remember { mutableStateOf<UpdateManager.UpdateInfo?>(null) }
     var updateStatus by remember { mutableStateOf("") }
     var downloadedUpdate by remember { mutableStateOf<File?>(null) }
     val updateScope = rememberCoroutineScope()
+
     LaunchedEffect(Unit) {
         prefs.edit().putBoolean("startup_completed", false).apply()
         kotlinx.coroutines.delay(1800)
@@ -477,11 +473,17 @@ fun WindroidDesktop(context: Context) {
         customizationVersion++
     }
 
+    fun setBuiltinShortcutVisible(id: String, visible: Boolean) {
+        hiddenBuiltinShortcuts = if (visible) hiddenBuiltinShortcuts - id else hiddenBuiltinShortcuts + id
+        prefs.edit().putStringSet("hidden_builtin_shortcuts", hiddenBuiltinShortcuts).apply()
+    }
+
     fun resetWindroid() {
         prefs.edit()
             .remove("desktop_background")
             .remove("desktop_apps")
             .remove("removed_desktop_apps")
+            .remove("hidden_builtin_shortcuts")
             .remove("recent_apps")
             .remove("user_name")
             .remove("user_avatar")
@@ -490,6 +492,7 @@ fun WindroidDesktop(context: Context) {
         selectedBackground = null
         desktopPackages = emptySet()
         removedDesktopPackages = emptySet()
+        hiddenBuiltinShortcuts = emptySet()
         launchedApps.clear()
         userName = "User"
         userAvatar = "🙂"
@@ -571,7 +574,13 @@ fun WindroidDesktop(context: Context) {
             Modifier.fillMaxSize().padding(start = 10.dp, top = 12.dp, end = 8.dp, bottom = taskbarHeight + 8.dp)
         ) {
             val desktopApps = apps.filter { it.packageName in desktopPackages }
-            val totalItems = 4 + desktopApps.size
+            val builtinShortcuts = listOf(
+                "builtin_my_computer",
+                "builtin_my_documents",
+                "builtin_internet",
+                "builtin_recycle_bin"
+            ).filterNot { it in hiddenBuiltinShortcuts }
+            val totalItems = builtinShortcuts.size + desktopApps.size
             val slotHeight = 94.dp
             val rowsPerColumn = (maxHeight.value / slotHeight.value).toInt().coerceAtLeast(1)
             val columnCount = ((totalItems + rowsPerColumn - 1) / rowsPerColumn).coerceAtLeast(1)
@@ -588,46 +597,51 @@ fun WindroidDesktop(context: Context) {
                         repeat(rowsPerColumn) { rowIndex ->
                             val itemIndex = columnIndex * rowsPerColumn + rowIndex
                             if (itemIndex < totalItems) {
-                                when (itemIndex) {
-                                    0 -> DesktopSystemShortcut(
-                                        context, prefs, customizationVersion,
-                                        "builtin_my_computer", "computer", "🖥️", "My Computer",
-                                        onClick = { computerOpen = true; startOpen = false },
-                                        onCustomize = { startOpen = false; settingsOpen = true },
-                                        onReset = { setIcon("builtin_my_computer", null) }
-                                    )
-                                    1 -> DesktopSystemShortcut(
-                                        context, prefs, customizationVersion,
-                                        "builtin_my_documents", "documents", "📁", "My Documents",
-                                        onClick = { startOpen = false; openDocuments(context) },
-                                        onCustomize = { startOpen = false; settingsOpen = true },
-                                        onReset = { setIcon("builtin_my_documents", null) }
-                                    )
-                                    2 -> DesktopSystemShortcut(
-                                        context, prefs, customizationVersion,
-                                        "builtin_internet", "internet", "🌐", "Internet Explorer",
-                                        onClick = { startOpen = false; openDefaultBrowser(context) },
-                                        onCustomize = { startOpen = false; settingsOpen = true },
-                                        onReset = { setIcon("builtin_internet", null) }
-                                    )
-                                    3 -> DesktopSystemShortcut(
-                                        context, prefs, customizationVersion,
-                                        "builtin_recycle_bin", "recycle", "🗑️", "Recycle Bin",
-                                        onClick = { startOpen = false; recycleOpen = true },
-                                        onCustomize = { startOpen = false; settingsOpen = true },
-                                        onReset = { setIcon("builtin_recycle_bin", null) }
-                                    )
-                                    else -> {
-                                        val app = desktopApps[itemIndex - 4]
-                                        DesktopAppIcon(
-                                            context = context,
-                                            prefs = prefs,
-                                            version = customizationVersion,
-                                            app = app,
-                                            onClick = { openAndroidApp(app) },
-                                            onRemove = { setDesktopApp(app.packageName, false) }
+                                if (itemIndex < builtinShortcuts.size) {
+                                    when (builtinShortcuts[itemIndex]) {
+                                        "builtin_my_computer" -> DesktopSystemShortcut(
+                                            context, prefs, customizationVersion,
+                                            "builtin_my_computer", "computer", "🖥️", "My Computer",
+                                            onClick = { computerOpen = true; startOpen = false },
+                                            onCustomize = { startOpen = false; settingsOpen = true },
+                                            onReset = { setIcon("builtin_my_computer", null) },
+                                            onRemove = { setBuiltinShortcutVisible("builtin_my_computer", false) }
+                                        )
+                                        "builtin_my_documents" -> DesktopSystemShortcut(
+                                            context, prefs, customizationVersion,
+                                            "builtin_my_documents", "documents", "📁", "My Documents",
+                                            onClick = { startOpen = false; openDocuments(context) },
+                                            onCustomize = { startOpen = false; settingsOpen = true },
+                                            onReset = { setIcon("builtin_my_documents", null) },
+                                            onRemove = { setBuiltinShortcutVisible("builtin_my_documents", false) }
+                                        )
+                                        "builtin_internet" -> DesktopSystemShortcut(
+                                            context, prefs, customizationVersion,
+                                            "builtin_internet", "internet", "🌐", "Internet Explorer",
+                                            onClick = { startOpen = false; openDefaultBrowser(context) },
+                                            onCustomize = { startOpen = false; settingsOpen = true },
+                                            onReset = { setIcon("builtin_internet", null) },
+                                            onRemove = { setBuiltinShortcutVisible("builtin_internet", false) }
+                                        )
+                                        "builtin_recycle_bin" -> DesktopSystemShortcut(
+                                            context, prefs, customizationVersion,
+                                            "builtin_recycle_bin", "recycle", "🗑️", "Recycle Bin",
+                                            onClick = { startOpen = false; recycleOpen = true },
+                                            onCustomize = { startOpen = false; settingsOpen = true },
+                                            onReset = { setIcon("builtin_recycle_bin", null) },
+                                            onRemove = { setBuiltinShortcutVisible("builtin_recycle_bin", false) }
                                         )
                                     }
+                                } else {
+                                    val app = desktopApps[itemIndex - builtinShortcuts.size]
+                                    DesktopAppIcon(
+                                        context = context,
+                                        prefs = prefs,
+                                        version = customizationVersion,
+                                        app = app,
+                                        onClick = { openAndroidApp(app) },
+                                        onRemove = { setDesktopApp(app.packageName, false) }
+                                    )
                                 }
                             }
                         }
@@ -724,6 +738,7 @@ fun WindroidDesktop(context: Context) {
                 selectedBackground = selectedBackground,
                 prefs = prefs,
                 desktopPackages = desktopPackages,
+                hiddenBuiltinShortcuts = hiddenBuiltinShortcuts,
                 onBackgroundSelected = { fileName ->
                     selectedBackground = fileName
                     prefs.edit().apply {
@@ -732,6 +747,7 @@ fun WindroidDesktop(context: Context) {
                 },
                 onIconSelected = { id, fileName -> setIcon(id, fileName) },
                 onDesktopToggle = { pkg, enabled -> setDesktopApp(pkg, enabled) },
+                onBuiltinToggle = { id, visible -> setBuiltinShortcutVisible(id, visible) },
                 onClose = { settingsOpen = false },
                 modifier = Modifier.align(Alignment.Center)
             )
@@ -987,23 +1003,6 @@ private fun XPWallpaper() {
     }
 }
 
-@Composable
-private fun DesktopResolvedBuiltInIcon(
-    context: Context,
-    prefs: android.content.SharedPreferences,
-    version: Int,
-    id: String,
-    fallback: String,
-    label: String,
-    resolvedIcon: ImageBitmap?,
-    onClick: () -> Unit
-) {
-    val custom = remember(version, id) {
-        loadAssetImage(context, "icons", prefs.getString(iconPrefKey(id), null))
-    }
-    DesktopIcon(custom ?: resolvedIcon, fallback, label, onClick)
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DesktopSystemShortcut(
@@ -1016,7 +1015,8 @@ private fun DesktopSystemShortcut(
     label: String,
     onClick: () -> Unit,
     onCustomize: () -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onRemove: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val customName = remember(id, version) { prefs.getString(iconPrefKey(id), null) }
@@ -1048,39 +1048,19 @@ private fun DesktopSystemShortcut(
                 properties = androidx.compose.ui.window.PopupProperties(focusable = true)
             ) {
                 Column(
-                    Modifier.width(150.dp).background(Color(0xFFFFF8E7)).border(1.dp, Color(0xFF777777)).padding(4.dp)
+                    Modifier.width(170.dp).background(Color(0xFFFFF8E7)).border(1.dp, Color(0xFF777777)).padding(4.dp)
                 ) {
                     Text("Open", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false; onClick() }.padding(7.dp), fontSize = 12.sp)
                     Text("Change Icon...", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false; onCustomize() }.padding(7.dp), fontSize = 12.sp)
                     if (customName != null) {
                         Text("Reset Icon", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false; onReset() }.padding(7.dp), fontSize = 12.sp)
                     }
+                    Text("Remove from Desktop", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false; onRemove() }.padding(7.dp), fontSize = 12.sp)
                     Text("Cancel", modifier = Modifier.fillMaxWidth().clickable { menuOpen = false }.padding(7.dp), fontSize = 12.sp)
                 }
             }
         }
     }
-}
-
-@Composable
-private fun DesktopBuiltInIcon(
-    context: Context,
-    prefs: android.content.SharedPreferences,
-    version: Int,
-    id: String,
-    fallback: String,
-    label: String,
-    onClick: () -> Unit
-) {
-    val image = remember(version, id) {
-        loadAssetImage(context, "icons", prefs.getString(iconPrefKey(id), null)) ?: when (id) {
-            "builtin_my_computer" -> xpIcon(context, "computer")
-            "builtin_my_documents" -> xpIcon(context, "documents")
-            "builtin_recycle_bin" -> xpIcon(context, "recycle")
-            else -> null
-        }
-    }
-    DesktopIcon(image, fallback, label, onClick)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1143,15 +1123,6 @@ private fun DesktopAppIcon(
 }
 
 @Composable
-private fun DesktopIcon(image: ImageBitmap?, fallback: String, label: String, onClick: () -> Unit) {
-    Column(Modifier.width(88.dp).clickable { onClick() }, horizontalAlignment = Alignment.CenterHorizontally) {
-        if (image != null) Image(bitmap = image, contentDescription = null, modifier = Modifier.size(42.dp), contentScale = ContentScale.Fit)
-        else Text(fallback, fontSize = 37.sp)
-        Text(label, color = Color.White, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
-    }
-}
-
-@Composable
 private fun AppearanceWindow(
     context: Context,
     apps: List<LaunchableApp>,
@@ -1160,9 +1131,11 @@ private fun AppearanceWindow(
     selectedBackground: String?,
     prefs: android.content.SharedPreferences,
     desktopPackages: Set<String>,
+    hiddenBuiltinShortcuts: Set<String>,
     onBackgroundSelected: (String?) -> Unit,
     onIconSelected: (String, String?) -> Unit,
     onDesktopToggle: (String, Boolean) -> Unit,
+    onBuiltinToggle: (String, Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1229,9 +1202,13 @@ private fun AppearanceWindow(
                         "builtin_internet" to "Internet Explorer",
                         "builtin_recycle_bin" to "Recycle Bin"
                     ).forEach { (id, label) ->
-                        AssignmentRow(label, prefs.getString(iconPrefKey(id), null)) {
-                            iconTarget = id; iconTargetLabel = label
-                        }
+                        AssignmentRow(
+                            label = label,
+                            assignedFile = prefs.getString(iconPrefKey(id), null),
+                            visible = id !in hiddenBuiltinShortcuts,
+                            onToggleVisibility = { onBuiltinToggle(id, id in hiddenBuiltinShortcuts) },
+                            onChange = { iconTarget = id; iconTargetLabel = label }
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -1262,7 +1239,7 @@ private fun AppearanceWindow(
                 Text("Customize Windroid XP", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(Modifier.height(12.dp))
                 SettingsChoice("🖼️", "Desktop Background", "Choose any image from assets/backgrounds") { page = "background" }
-                SettingsChoice("🖥️", "Desktop Icons", "Assign individual images to Windroid shortcuts") { page = "desktopIcons" }
+                SettingsChoice("🖥️", "Desktop Icons", "Assign or hide Windroid shortcuts") { page = "desktopIcons" }
                 SettingsChoice("📦", "Applications", "Custom app icons and desktop shortcuts") { page = "apps" }
                 Spacer(Modifier.height(14.dp))
                 Text("Images added to the GitHub assets folders appear here automatically in the next build.", fontSize = 10.sp, color = Color(0xFF666666), modifier = Modifier.padding(8.dp))
@@ -1303,12 +1280,20 @@ private fun PickerRow(label: String, image: ImageBitmap?, selected: Boolean = fa
 }
 
 @Composable
-private fun AssignmentRow(label: String, assignedFile: String?, onChange: () -> Unit) {
+private fun AssignmentRow(
+    label: String,
+    assignedFile: String?,
+    visible: Boolean,
+    onToggleVisibility: () -> Unit,
+    onChange: () -> Unit
+) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text(assignedFile ?: "Default icon", fontSize = 9.sp, color = Color(0xFF666666), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (visible) (assignedFile ?: "Default icon") else "Hidden from desktop", fontSize = 9.sp, color = Color(0xFF666666), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        Text(if (visible) "Remove" else "Restore", color = Color(0xFF003399), fontSize = 10.sp, modifier = Modifier.clickable { onToggleVisibility() }.padding(5.dp))
+        Spacer(Modifier.width(4.dp))
         XPActionButton("Change") { onChange() }
     }
 }
@@ -1497,9 +1482,6 @@ private fun StartMenu(
                         }
                     } else {
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                            StartMenuItem("🌐", "Internet") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"))) }
-                            StartMenuItem("📧", "E-mail") { }
-                            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6)))
                             if (recentApps.isEmpty()) {
                                 Text("Recently used programs will appear here.", color = Color(0xFF666666), fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp))
                             } else {
@@ -1546,12 +1528,17 @@ private fun StartMenu(
             Row(Modifier.fillMaxWidth().height(47.dp).background(xpBlue).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 Text("🔑 Log Off", color = Color.White, fontSize = 12.sp)
                 Spacer(Modifier.width(16.dp))
-                Text(
-                    "⏻ Turn Off Computer",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    modifier = Modifier.clickable { powerOpen = true }.padding(vertical = 8.dp)
-                )
+                Row(
+                    Modifier.clickable { powerOpen = true }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val powerIcon = remember { xpIcon(context, "power") }
+                    if (powerIcon != null) {
+                        Image(bitmap = powerIcon, contentDescription = "Turn Off Computer", modifier = Modifier.size(24.dp), contentScale = ContentScale.Fit)
+                        Spacer(Modifier.width(5.dp))
+                    }
+                    Text("Turn Off Computer", color = Color.White, fontSize = 12.sp)
+                }
             }
         }
 
@@ -1699,24 +1686,6 @@ private fun ContextMenuRow(label: String, onClick: () -> Unit) {
         color = Color.Black,
         modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 10.dp, vertical = 9.dp)
     )
-}
-
-@Composable
-private fun StartMenuItem(icon: String, label: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(icon, fontSize = 22.sp)
-        Spacer(Modifier.width(9.dp))
-        Text(label, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun RightMenuItem(icon: String, label: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(icon, fontSize = 16.sp)
-        Spacer(Modifier.width(7.dp))
-        Text(label, color = Color(0xFF163C73), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-    }
 }
 
 @Composable
@@ -1891,7 +1860,6 @@ private fun Clock() {
     )
 }
 
-
 @Composable
 private fun FamilySetupWizard(
     context: Context,
@@ -1944,15 +1912,16 @@ private fun FamilySetupWizard(
     }
 }
 
-
 private fun iconCategory(file: String): String {
     val name = file.substringAfter("::", file).substringAfterLast("/").lowercase()
     return when {
-        listOf("folder", "document", "file", "explorer", "briefcase").any { it in name } -> "Files & Folders"
-        listOf("computer", "disk", "drive", "cd", "dvd", "usb", "printer", "camera", "scanner").any { it in name } -> "Hardware"
-        listOf("network", "internet", "connection", "mail", "messenger", "phone").any { it in name } -> "Internet & Communications"
-        listOf("control", "setting", "user", "update", "security", "help", "system").any { it in name } -> "System & Control Panel"
-        listOf("media", "music", "video", "picture", "photo", "paint").any { it in name } -> "Media"
-        else -> "Programs & Other"
+        file.startsWith("apps/") -> "App Icons"
+        file.startsWith("custom/") -> "Custom Icons"
+        listOf("folder", "document", "file", "explorer", "briefcase").any { it in name } -> "Windows XP • Files & Folders"
+        listOf("computer", "disk", "drive", "cd", "dvd", "usb", "printer", "camera", "scanner").any { it in name } -> "Windows XP • Hardware"
+        listOf("network", "internet", "connection", "mail", "messenger", "phone").any { it in name } -> "Windows XP • Internet & Communications"
+        listOf("control", "setting", "user", "update", "security", "help", "system").any { it in name } -> "Windows XP • System & Control Panel"
+        listOf("media", "music", "video", "picture", "photo", "paint").any { it in name } -> "Windows XP • Media"
+        else -> "Windows XP • Programs & Other"
     }
 }
