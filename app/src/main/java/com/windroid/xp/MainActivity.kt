@@ -227,7 +227,7 @@ private fun loadAssetImage(context: Context, folder: String, fileName: String?):
             context.assets.open("$folder/$fileName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
         }
     } catch (_: Exception) { null }
-    assetImageCache[key] = image
+    if (image != null) assetImageCache[key] = image
     return image
 }
 
