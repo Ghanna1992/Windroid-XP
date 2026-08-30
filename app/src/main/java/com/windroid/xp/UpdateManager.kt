@@ -21,7 +21,7 @@ object UpdateManager {
     private const val STABLE_RELEASE_API_URL =
         "https://api.github.com/repos/Ghanna1992/Windroid-XP/releases/latest"
     private const val DEV_RELEASES_API_URL =
-        "https://api.github.com/repos/Ghanna1992/Windroid-XP/releases?per_page=30"
+        "https://api.github.com/repos/Ghanna1992/Windroid-XP/releases?per_page=100&page=1"
 
     data class UpdateInfo(
         val versionName: String,
@@ -39,12 +39,18 @@ object UpdateManager {
         var connection: HttpURLConnection? = null
         try {
             val isDev = BuildConfig.UPDATE_CHANNEL == "dev"
-            val endpoint = if (isDev) DEV_RELEASES_API_URL else STABLE_RELEASE_API_URL
+            // Add a harmless cache-buster for Dev. During active testing we can publish several
+            // prereleases within minutes and do not want a cached release list hiding them.
+            val endpoint = if (isDev) "$DEV_RELEASES_API_URL&_=${System.currentTimeMillis()}" else STABLE_RELEASE_API_URL
             connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 8000
                 readTimeout = 8000
+                useCaches = false
                 setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("Pragma", "no-cache")
+                setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
                 setRequestProperty("User-Agent", "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}/${BuildConfig.VERSION_NAME}")
             }
 
@@ -94,13 +100,26 @@ object UpdateManager {
     }
 
     private fun findLatestDevRelease(releases: JSONArray): JSONObject? {
+        var bestRelease: JSONObject? = null
+        var bestVersion: String? = null
+
         for (i in 0 until releases.length()) {
             val release = releases.optJSONObject(i) ?: continue
             if (release.optBoolean("draft", false)) continue
             if (!release.optBoolean("prerelease", false)) continue
-            if (release.optString("tag_name").startsWith("dev-v")) return release
+
+            val tag = release.optString("tag_name")
+            if (!tag.startsWith("dev-v")) continue
+
+            val version = tag.removePrefix("dev-v")
+            if (version.isBlank()) continue
+
+            if (bestVersion == null || isNewer(version, bestVersion)) {
+                bestVersion = version
+                bestRelease = release
+            }
         }
-        return null
+        return bestRelease
     }
 
     suspend fun downloadUpdate(context: Context, update: UpdateInfo): File? = withContext(Dispatchers.IO) {
@@ -111,6 +130,8 @@ object UpdateManager {
                 instanceFollowRedirects = true
                 connectTimeout = 15000
                 readTimeout = 30000
+                useCaches = false
+                setRequestProperty("Cache-Control", "no-cache")
                 setRequestProperty("User-Agent", "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}/${BuildConfig.VERSION_NAME}")
             }
             if (connection.responseCode !in 200..299) {
