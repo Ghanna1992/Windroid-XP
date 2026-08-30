@@ -48,6 +48,18 @@ jobs:
       - name: Apply shell compile fix
         run: python3 scripts/patch_shell_compile_fix.py
 
+      - name: Bake transformed source into repository
+        shell: bash
+        run: |
+          git config user.name "Windroid Build Bot"
+          git config user.email "actions@github.com"
+          rm -f scripts/*.py
+          git add app/src/main/java/com/windroid/xp/MainActivity.kt scripts
+          if ! git diff --cached --quiet; then
+            git commit -m "Bake generated launcher source into repo [skip ci]"
+            git push
+          fi
+
       - name: Detect signing configuration
         id: signing
         shell: bash
