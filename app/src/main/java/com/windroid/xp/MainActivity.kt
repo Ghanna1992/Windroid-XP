@@ -26,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -61,12 +63,48 @@ fun WindroidDesktop(context: Context) {
     val apps = remember { installedApps(context) }
     val launchedApps = remember { mutableStateListOf<LaunchableApp>() }
 
+    var updateWindowOpen by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateManager.UpdateInfo?>(null) }
+    var updateStatus by remember { mutableStateOf("") }
+    var downloadedUpdate by remember { mutableStateOf<File?>(null) }
+    val updateScope = rememberCoroutineScope()
+
     fun openAndroidApp(app: LaunchableApp) {
         launchedApps.removeAll { it.packageName == app.packageName }
         launchedApps.add(0, app)
         startOpen = false
         computerOpen = false
         launchApp(context, app)
+    }
+
+    fun checkForUpdates(manual: Boolean) {
+        startOpen = false
+        updateStatus = "Checking for updates..."
+        if (manual) updateWindowOpen = true
+        updateScope.launch {
+            val found = UpdateManager.checkForUpdate()
+            updateInfo = found
+            downloadedUpdate = null
+            if (found != null) {
+                updateStatus = "Windroid XP ${found.versionName} is ready."
+                updateWindowOpen = true
+            } else if (manual) {
+                updateStatus = "Your computer is up to date."
+                updateWindowOpen = true
+            } else {
+                updateWindowOpen = false
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(2500)
+        val found = UpdateManager.checkForUpdate()
+        if (found != null) {
+            updateInfo = found
+            updateStatus = "Windroid XP ${found.versionName} is ready."
+            updateWindowOpen = true
+        }
     }
 
     val xpBlue = Color(0xFF245EDB)
@@ -106,8 +144,63 @@ fun WindroidDesktop(context: Context) {
             }
         }
 
+        if (updateWindowOpen) {
+            XPWindow("Windows Update", Modifier.align(Alignment.Center)) {
+                Text("🛡️  Automatic Updates", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(10.dp))
+                Text(updateStatus, fontSize = 13.sp)
+                updateInfo?.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(notes.take(280), fontSize = 11.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.height(15.dp))
+
+                val readyFile = downloadedUpdate
+                val found = updateInfo
+                if (readyFile != null) {
+                    XPActionButton("Install update") {
+                        val opened = UpdateManager.installUpdate(context, readyFile)
+                        if (!opened) {
+                            updateStatus = "Allow installs from Windroid XP, then return and tap Install update again."
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                } else if (found != null) {
+                    XPActionButton("Download and install") {
+                        updateStatus = "Downloading update..."
+                        updateScope.launch {
+                            val file = UpdateManager.downloadUpdate(context, found)
+                            if (file == null) {
+                                updateStatus = "The update could not be downloaded. Try again later."
+                            } else {
+                                downloadedUpdate = file
+                                updateStatus = "Download complete. Opening the Android installer..."
+                                val opened = UpdateManager.installUpdate(context, file)
+                                if (!opened) {
+                                    updateStatus = "Allow installs from Windroid XP, then return and tap Install update."
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                } else {
+                    XPActionButton("Check again") { checkForUpdates(true) }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                Text("Remind me later", color = Color(0xFF003399), fontSize = 12.sp,
+                    modifier = Modifier.clickable { updateWindowOpen = false })
+            }
+        }
+
         if (startOpen) {
-            StartMenu(apps, context, { openAndroidApp(it) }, Modifier.align(Alignment.BottomStart).padding(bottom = taskbarHeight))
+            StartMenu(
+                apps,
+                context,
+                { openAndroidApp(it) },
+                { checkForUpdates(true) },
+                Modifier.align(Alignment.BottomStart).padding(bottom = taskbarHeight)
+            )
         }
 
         Row(
@@ -153,6 +246,18 @@ fun WindroidDesktop(context: Context) {
 }
 
 @Composable
+private fun XPActionButton(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.background(Color(0xFFECE9D8), RoundedCornerShape(2.dp))
+            .border(1.dp, Color(0xFF7F9DB9), RoundedCornerShape(2.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+    ) {
+        Text(label, fontSize = 12.sp, color = Color.Black)
+    }
+}
+
+@Composable
 private fun TaskButton(icon: String, label: String, onClick: () -> Unit) {
     Row(
         Modifier.padding(end = 3.dp).height(31.dp).widthIn(min = 90.dp, max = 150.dp)
@@ -180,6 +285,7 @@ private fun StartMenu(
     apps: List<LaunchableApp>,
     context: Context,
     onLaunchApp: (LaunchableApp) -> Unit,
+    onCheckUpdates: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val xpBlue = Color(0xFF1D62C8)
@@ -206,6 +312,7 @@ private fun StartMenu(
                 Spacer(Modifier.height(5.dp)); Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFB4CCE7))); Spacer(Modifier.height(5.dp))
                 RightMenuItem("🖥️", "My Computer") { }
                 RightMenuItem("⚙️", "Control Panel") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                RightMenuItem("🛡️", "Windows Update") { onCheckUpdates() }
                 RightMenuItem("🔍", "Search") { }
                 RightMenuItem("❓", "Help and Support") { }
             }
