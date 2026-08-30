@@ -195,11 +195,12 @@ fun WindroidDesktop(context: Context) {
 
         if (startOpen) {
             StartMenu(
-                apps,
-                context,
-                { openAndroidApp(it) },
-                { checkForUpdates(true) },
-                Modifier.align(Alignment.BottomStart).padding(bottom = taskbarHeight)
+                apps = apps,
+                recentApps = launchedApps,
+                context = context,
+                onLaunchApp = { openAndroidApp(it) },
+                onCheckUpdates = { checkForUpdates(true) },
+                modifier = Modifier.align(Alignment.BottomStart).padding(bottom = taskbarHeight)
             )
         }
 
@@ -283,12 +284,15 @@ private fun DesktopIcon(icon: String, label: String, onClick: () -> Unit) {
 @Composable
 private fun StartMenu(
     apps: List<LaunchableApp>,
+    recentApps: List<LaunchableApp>,
     context: Context,
     onLaunchApp: (LaunchableApp) -> Unit,
     onCheckUpdates: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val xpBlue = Color(0xFF1D62C8)
+    var showAllPrograms by remember { mutableStateOf(false) }
+
     Column(modifier.width(350.dp).heightIn(max = 590.dp).shadow(8.dp).border(2.dp, Color(0xFF174EA6)).background(Color.White)) {
         Row(
             Modifier.fillMaxWidth().height(68.dp).background(Brush.verticalGradient(listOf(Color(0xFF2F7BDC), Color(0xFF1855B6)))).padding(horizontal = 12.dp),
@@ -298,13 +302,59 @@ private fun StartMenu(
             Spacer(Modifier.width(10.dp))
             Text("Windroid XP", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
+
         Row(Modifier.weight(1f)) {
-            LazyColumn(Modifier.weight(1.35f).fillMaxHeight().background(Color.White)) {
-                item { StartMenuItem("🌐", "Internet") { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com"))) } }
-                item { StartMenuItem("📧", "E-mail") { } }
-                item { Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6))) }
-                items(apps.take(8)) { app -> StartMenuItem("▣", app.label) { onLaunchApp(app) } }
+            if (showAllPrograms) {
+                Column(Modifier.weight(1.35f).fillMaxHeight().background(Color.White)) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { showAllPrograms = false }.padding(horizontal = 10.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("◀", fontSize = 14.sp, color = Color(0xFF174EA6))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Back", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF174EA6))
+                    }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6)))
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        items(apps) { app ->
+                            StartMenuItem("▣", app.label) { onLaunchApp(app) }
+                        }
+                    }
+                }
+            } else {
+                Column(Modifier.weight(1.35f).fillMaxHeight().background(Color.White)) {
+                    LazyColumn(Modifier.weight(1f)) {
+                        item { StartMenuItem("🌐", "Internet") { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com"))) } }
+                        item { StartMenuItem("📧", "E-mail") { } }
+                        item { Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6))) }
+                        if (recentApps.isEmpty()) {
+                            item {
+                                Text(
+                                    "Recently used programs will appear here.",
+                                    color = Color(0xFF666666),
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
+                                )
+                            }
+                        } else {
+                            items(recentApps) { app ->
+                                StartMenuItem("▣", app.label) { onLaunchApp(app) }
+                            }
+                        }
+                    }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6)))
+                    Row(
+                        Modifier.fillMaxWidth().clickable { showAllPrograms = true }.padding(horizontal = 10.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("All Programs", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        Text("▶", color = Color(0xFF248B23), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
+
             Column(Modifier.weight(0.95f).fillMaxHeight().background(Color(0xFFDCEBFA)).padding(vertical = 7.dp)) {
                 RightMenuItem("📄", "My Documents") { }
                 RightMenuItem("🖼️", "My Pictures") { }
@@ -317,6 +367,7 @@ private fun StartMenu(
                 RightMenuItem("❓", "Help and Support") { }
             }
         }
+
         Row(
             Modifier.fillMaxWidth().height(47.dp).background(xpBlue).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically
