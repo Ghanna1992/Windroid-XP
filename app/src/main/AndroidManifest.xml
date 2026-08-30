@@ -12,7 +12,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="Windroid XP"
+        android:label="${appLabel}"
         android:theme="@style/Theme.WindroidXP">
 
         <provider
