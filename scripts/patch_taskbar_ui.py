@@ -3,8 +3,89 @@ from pathlib import Path
 path = Path("app/src/main/java/com/windroid/xp/MainActivity.kt")
 text = path.read_text(encoding="utf-8")
 
-# Make the custom Start artwork stand alone on the XP taskbar. No generated
-# green button is drawn when the asset exists, and the image keeps its shape.
+# Give the Start asset real edge transparency even if the source PNG was saved
+# on a white/light-gray canvas. We flood-fill only neutral pixels connected to
+# the image edge, so white lettering/logo inside the green button is preserved.
+old_loader = '''private fun loadAssetImage(context: Context, folder: String, fileName: String?): ImageBitmap? {
+    if (fileName.isNullOrBlank()) return null
+    return try {
+        context.assets.open("$folder/$fileName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+    } catch (_: Exception) {
+        null
+    }
+}
+'''
+new_loader = '''private fun loadAssetImage(context: Context, folder: String, fileName: String?): ImageBitmap? {
+    if (fileName.isNullOrBlank()) return null
+    return try {
+        context.assets.open("$folder/$fileName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun loadStartButtonImage(context: Context): ImageBitmap? {
+    return try {
+        val decoded = context.assets.open("icons/start_button.png").use { BitmapFactory.decodeStream(it) } ?: return null
+        val bitmap = decoded.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width <= 0 || height <= 0) return bitmap.asImageBitmap()
+
+        fun removableBackground(pixel: Int): Boolean {
+            val a = android.graphics.Color.alpha(pixel)
+            val r = android.graphics.Color.red(pixel)
+            val g = android.graphics.Color.green(pixel)
+            val b = android.graphics.Color.blue(pixel)
+            val max = maxOf(r, g, b)
+            val min = minOf(r, g, b)
+            val average = (r + g + b) / 3
+            return a == 0 || (max - min <= 30 && average >= 135)
+        }
+
+        val seen = BooleanArray(width * height)
+        val queue = java.util.ArrayDeque<Int>()
+        fun seed(x: Int, y: Int) {
+            val index = y * width + x
+            if (!seen[index] && removableBackground(bitmap.getPixel(x, y))) {
+                seen[index] = true
+                queue.add(index)
+            }
+        }
+        for (x in 0 until width) {
+            seed(x, 0)
+            seed(x, height - 1)
+        }
+        for (y in 0 until height) {
+            seed(0, y)
+            seed(width - 1, y)
+        }
+        while (queue.isNotEmpty()) {
+            val index = queue.removeFirst()
+            val x = index % width
+            val y = index / width
+            bitmap.setPixel(x, y, android.graphics.Color.TRANSPARENT)
+            if (x > 0) seed(x - 1, y)
+            if (x + 1 < width) seed(x + 1, y)
+            if (y > 0) seed(x, y - 1)
+            if (y + 1 < height) seed(x, y + 1)
+        }
+        bitmap.asImageBitmap()
+    } catch (_: Exception) {
+        loadAssetImage(context, "icons", "start_button.png")
+    }
+}
+'''
+if old_loader not in text:
+    raise SystemExit("Asset loader block not found; source changed")
+text = text.replace(old_loader, new_loader, 1)
+text = text.replace(
+    'val startButtonImage = remember { loadAssetImage(context, "icons", "start_button.png") }',
+    'val startButtonImage = remember { loadStartButtonImage(context) }',
+    1
+)
+
+# Make the custom Start artwork stand alone on the XP taskbar.
 old_start = '''            Box(
                 Modifier.fillMaxHeight().width(104.dp)
                     .then(
@@ -65,8 +146,8 @@ if old_start not in text:
     raise SystemExit("Start button block not found; source changed")
 text = text.replace(old_start, new_start, 1)
 
-# Desktop shortcuts should fill downward, then begin a fresh column instead of
-# being squeezed into the taskbar when the first column runs out of room.
+# Desktop shortcuts fill down, then begin a new column. App shortcuts also get
+# an XP-style long-press menu so they can be opened, removed, or inspected.
 old_desktop = '''        Column(
             Modifier.fillMaxHeight().padding(start = 10.dp, top = 12.dp, bottom = taskbarHeight + 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -119,7 +200,14 @@ new_desktop = '''        BoxWithConstraints(
                                     3 -> DesktopBuiltInIcon(context, prefs, customizationVersion, "builtin_recycle_bin", "🗑️", "Recycle Bin") { startOpen = false }
                                     else -> {
                                         val app = desktopApps[itemIndex - 4]
-                                        DesktopAppIcon(context, prefs, customizationVersion, app) { openAndroidApp(app) }
+                                        DesktopAppIcon(
+                                            context = context,
+                                            prefs = prefs,
+                                            version = customizationVersion,
+                                            app = app,
+                                            onClick = { openAndroidApp(app) },
+                                            onRemove = { setDesktopApp(app.packageName, false) }
+                                        )
                                     }
                                 }
                             }
@@ -133,7 +221,95 @@ if old_desktop not in text:
     raise SystemExit("Desktop icon block not found; source changed")
 text = text.replace(old_desktop, new_desktop, 1)
 
-# Replace the obvious cyan mini-bar with a compact XP-style notification area.
+old_desktop_app = '''@Composable
+private fun DesktopAppIcon(
+    context: Context,
+    prefs: android.content.SharedPreferences,
+    version: Int,
+    app: LaunchableApp,
+    onClick: () -> Unit
+) {
+    val image = remember(version, app.packageName) {
+        loadAssetImage(context, "icons", prefs.getString(iconPrefKey("app_${app.packageName}"), null))
+    }
+    DesktopIcon(image ?: app.icon, "▣", app.label, onClick)
+}
+
+@Composable
+private fun DesktopIcon(image: ImageBitmap?, fallback: String, label: String, onClick: () -> Unit) {
+    Column(Modifier.width(88.dp).clickable { onClick() }, horizontalAlignment = Alignment.CenterHorizontally) {
+        if (image != null) Image(bitmap = image, contentDescription = null, modifier = Modifier.size(42.dp), contentScale = ContentScale.Fit)
+        else Text(fallback, fontSize = 37.sp)
+        Text(label, color = Color.White, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
+    }
+}
+'''
+new_desktop_app = '''@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DesktopAppIcon(
+    context: Context,
+    prefs: android.content.SharedPreferences,
+    version: Int,
+    app: LaunchableApp,
+    onClick: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val image = remember(version, app.packageName) {
+        loadAssetImage(context, "icons", prefs.getString(iconPrefKey("app_${app.packageName}"), null))
+    }
+    var menuOpen by remember { mutableStateOf(false) }
+    Box(Modifier.width(88.dp)) {
+        Column(
+            Modifier.width(88.dp).combinedClickable(
+                onClick = onClick,
+                onLongClick = { menuOpen = true }
+            ),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            val icon = image ?: app.icon
+            if (icon != null) Image(bitmap = icon, contentDescription = app.label, modifier = Modifier.size(42.dp), contentScale = ContentScale.Fit)
+            else Text("▣", fontSize = 37.sp)
+            Text(app.label, color = Color.White, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
+        }
+
+        if (menuOpen) {
+            Column(
+                Modifier.padding(start = 64.dp, top = 28.dp).width(190.dp).shadow(10.dp)
+                    .background(Color(0xFFF5F4EA)).border(1.dp, Color(0xFF7F9DB9)).padding(5.dp)
+            ) {
+                Text(app.label, fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(6.dp))
+                ContextMenuRow("Open") {
+                    menuOpen = false
+                    onClick()
+                }
+                ContextMenuRow("Remove from Desktop") {
+                    menuOpen = false
+                    onRemove()
+                }
+                ContextMenuRow("App Info") {
+                    menuOpen = false
+                    openAppInfo(context, app.packageName)
+                }
+                ContextMenuRow("Cancel") { menuOpen = false }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopIcon(image: ImageBitmap?, fallback: String, label: String, onClick: () -> Unit) {
+    Column(Modifier.width(88.dp).clickable { onClick() }, horizontalAlignment = Alignment.CenterHorizontally) {
+        if (image != null) Image(bitmap = image, contentDescription = null, modifier = Modifier.size(42.dp), contentScale = ContentScale.Fit)
+        else Text(fallback, fontSize = 37.sp)
+        Text(label, color = Color.White, fontSize = 12.sp, lineHeight = 13.sp, maxLines = 2)
+    }
+}
+'''
+if old_desktop_app not in text:
+    raise SystemExit("Desktop app icon function not found; source changed")
+text = text.replace(old_desktop_app, new_desktop_app, 1)
+
+# Replace the old mini-bar with a fixed-width XP-style notification area.
 old_tray = '''            Row(
                 Modifier.fillMaxHeight().background(Color(0xFF1595D1)).padding(horizontal = 9.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -149,8 +325,8 @@ if old_tray not in text:
     raise SystemExit("Tray block not found; source changed")
 text = text.replace(old_tray, new_tray, 1)
 
-# XP taskbar buttons are compact icon buttons. Keep the label as accessibility
-# content instead of painting Android-style text across the taskbar.
+# XP taskbar buttons are compact icon-only buttons. The tray has a fixed up
+# chevron and popup menu; opening it never changes the clock position.
 start = text.index("@Composable\nprivate fun TaskButton(")
 end = text.index("\n@OptIn(ExperimentalFoundationApi::class)", start)
 new_task = '''@Composable
@@ -174,53 +350,57 @@ private fun TaskButton(icon: ImageBitmap?, fallback: String, label: String, onCl
 private fun XPSystemTray(context: Context) {
     var expanded by remember { mutableStateOf(false) }
 
-    Box {
+    Box(Modifier.fillMaxHeight().width(146.dp)) {
         Row(
-            Modifier.fillMaxHeight()
-                .background(Brush.verticalGradient(listOf(Color(0xFF2FA6E2), Color(0xFF1685C5))))
-                .border(width = 1.dp, color = Color(0xFF57B9E8))
-                .padding(horizontal = 6.dp),
+            Modifier.fillMaxSize()
+                .background(Brush.verticalGradient(listOf(Color(0xFF2F82D7), Color(0xFF1764B8))))
+                .border(width = 1.dp, color = Color(0xFF4C99E2))
+                .padding(horizontal = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.size(25.dp).clickable { expanded = !expanded },
+                Modifier.size(24.dp).clickable { expanded = !expanded },
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (expanded) "›" else "‹", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("⌃", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.width(2.dp))
+            Spacer(Modifier.width(3.dp))
             Text("◉", color = Color.White, fontSize = 12.sp, modifier = Modifier.clickable {
                 context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             })
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(7.dp))
             Text("ᛒ", color = Color.White, fontSize = 12.sp, modifier = Modifier.clickable {
                 context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
             })
-            Spacer(Modifier.width(7.dp))
+            Spacer(Modifier.weight(1f))
             Clock()
         }
 
         if (expanded) {
             Column(
                 Modifier.align(Alignment.BottomEnd).padding(bottom = 45.dp)
-                    .width(172.dp).shadow(8.dp)
+                    .width(205.dp).shadow(10.dp)
                     .background(Color(0xFFF5F4EA))
                     .border(1.dp, Color(0xFF7F9DB9))
                     .padding(5.dp)
             ) {
-                Text("Notification Area", fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(6.dp))
-                ContextMenuRow("📶  Wi-Fi settings") {
+                ContextMenuRow("Wi-Fi settings") {
                     expanded = false
                     context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
                 }
-                ContextMenuRow("ᛒ  Bluetooth settings") {
+                ContextMenuRow("Bluetooth settings") {
                     expanded = false
                     context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 }
-                ContextMenuRow("🔦  Flashlight / quick controls") {
+                ContextMenuRow("Flashlight / quick controls") {
                     expanded = false
                     context.startActivity(Intent(Settings.ACTION_SETTINGS))
                 }
+                ContextMenuRow("Android Settings") {
+                    expanded = false
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+                ContextMenuRow("Cancel") { expanded = false }
             }
         }
     }
@@ -228,5 +408,43 @@ private fun XPSystemTray(context: Context) {
 '''
 text = text[:start] + new_task + text[end:]
 
+# Give the clock the compact XP tray look and a fixed width so neighboring tray
+# icons never shove it around.
+old_clock = '''@Composable
+private fun Clock() {
+    var now by remember { mutableStateOf(Date()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            now = Date()
+        }
+    }
+    Text(SimpleDateFormat("h:mm a", Locale.getDefault()).format(now), color = Color.White, fontSize = 12.sp)
+}
+'''
+new_clock = '''@Composable
+private fun Clock() {
+    var now by remember { mutableStateOf(Date()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            now = Date()
+        }
+    }
+    Box(Modifier.width(72.dp), contentAlignment = Alignment.Center) {
+        Text(
+            SimpleDateFormat("h:mm a", Locale.getDefault()).format(now),
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Normal,
+            maxLines = 1
+        )
+    }
+}
+'''
+if old_clock not in text:
+    raise SystemExit("Clock function not found; source changed")
+text = text.replace(old_clock, new_clock, 1)
+
 path.write_text(text, encoding="utf-8")
-print("Patched Windroid XP taskbar UI and desktop grid")
+print("Patched Windroid XP desktop menus, tray, clock, grid, and Start transparency")
