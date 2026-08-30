@@ -42,6 +42,9 @@ jobs:
       - name: Apply Start menu app search
         run: python3 scripts/patch_start_search.py
 
+      - name: Apply XP system shell expansion
+        run: python3 scripts/patch_system_shell.py
+
       - name: Detect signing configuration
         id: signing
         shell: bash
