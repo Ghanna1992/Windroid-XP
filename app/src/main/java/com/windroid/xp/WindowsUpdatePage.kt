@@ -17,7 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class WindowsUpdateSection { HOME, HISTORY, SETTINGS, HIDDEN, HELP, ADMIN, VALIDATION, DEAD_END }
+enum class WindowsUpdateSection { HOME, HISTORY, SETTINGS, HIDDEN, HELP, ADMIN, VALIDATION, DEAD_END, CUSTOM }
 
 @Composable
 fun WindowsUpdatePage(status: String, progress: Int, availableVersion: String?, notes: String?, downloaded: Boolean, history: List<UpdateManager.UpdateHistoryItem> = emptyList(), historyLoading: Boolean = false, automaticChecks: Boolean = true, onAutomaticChecksChanged: (Boolean) -> Unit = {}, onCheckAgain: () -> Unit, onDownloadAndInstall: () -> Unit, onInstall: () -> Unit, onClose: () -> Unit) {
@@ -36,6 +36,7 @@ fun WindowsUpdatePage(status: String, progress: Int, availableVersion: String?, 
         WindowsUpdateSection.ADMIN -> "http://windowsupdate.windroid.local/admin.aspx"
         WindowsUpdateSection.VALIDATION -> "http://windowsupdate.windroid.local/genuine/validate.aspx"
         WindowsUpdateSection.DEAD_END -> "http://windowsupdate.windroid.local/information.aspx"
+        WindowsUpdateSection.CUSTOM -> "http://windowsupdate.windroid.local/custominstall.aspx"
         else -> "http://windowsupdate.windroid.local/v6/default.aspx?ln=en-us"
     }
 
@@ -51,16 +52,32 @@ fun WindowsUpdatePage(status: String, progress: Int, availableVersion: String?, 
                     Column(Modifier.weight(1f).fillMaxHeight().background(Color.White)) {
                         when (section) {
                             WindowsUpdateSection.HOME -> {
-                                UpdatePageHeading(when { isDownloading -> "Downloading Updates"; downloaded -> "Ready to Install"; hasUpdate -> "High-priority updates are available"; status.contains("checking", true) -> "Checking for the latest updates"; status.contains("up to date", true) -> "Express Results"; else -> "Windows Update" })
+                                UpdatePageHeading(when { isDownloading -> "Downloading Updates"; downloaded -> "Ready to Install"; hasUpdate -> "Choose how to install updates"; status.contains("checking", true) -> "Checking for the latest updates"; status.contains("up to date", true) -> "Express Results"; else -> "Windows Update" })
                                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
                                     Text(status.ifBlank { "Keep your computer up to date. Check for the latest Windroid XP updates." }, fontSize = 12.sp)
                                     availableVersion?.let { Spacer(Modifier.height(8.dp)); Text("Windroid XP $it", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF174A8B)) }
                                     if (progress in 0..100) { Spacer(Modifier.height(14.dp)); ClassicSegmentProgress(progress); Spacer(Modifier.height(5.dp)); Text("Installing update $progress%", fontSize = 10.sp, color = Color.Gray) }
-                                    if (hasUpdate) { Spacer(Modifier.height(15.dp)); Text("Details", fontSize = 12.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(4.dp)); Text(cleanReleaseNotes(notes).ifBlank { "Detailed information was not recorded for this update." }, fontSize = 10.sp, color = Color(0xFF444444), maxLines = 20, overflow = TextOverflow.Ellipsis) }
-                                    Spacer(Modifier.height(18.dp)); when { downloaded -> ClassicWebButton("Install Updates") { onInstall() }; hasUpdate && !isDownloading -> ClassicWebButton("Install Updates") { onDownloadAndInstall() }; !isDownloading -> ClassicWebButton("Express") { onCheckAgain() } }
+                                    if (hasUpdate) {
+                                        Spacer(Modifier.height(15.dp)); Text("Details", fontSize = 12.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(4.dp)); Text(cleanReleaseNotes(notes).ifBlank { "Detailed information was not recorded for this update." }, fontSize = 10.sp, color = Color(0xFF444444), maxLines = 20, overflow = TextOverflow.Ellipsis)
+                                        Spacer(Modifier.height(20.dp))
+                                        Text("Choose an installation method:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(Modifier.height(10.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            ClassicWebButton("Express") { if (downloaded) onInstall() else onDownloadAndInstall() }
+                                            Spacer(Modifier.width(10.dp))
+                                            ClassicWebButton("Custom") { navigate(WindowsUpdateSection.CUSTOM) }
+                                        }
+                                        Spacer(Modifier.height(8.dp))
+                                        Text("Express installs the recommended update immediately. Custom lets you review additional installation options.", fontSize = 9.sp, color = Color(0xFF666666))
+                                    }
                                     Spacer(Modifier.height(20.dp)); WebLink("Why should I keep my computer updated?") { navigate(WindowsUpdateSection.HELP) }; WebLink("Is my copy of Windroid genuine?") { navigate(WindowsUpdateSection.VALIDATION) }
                                 }
                             }
+                            WindowsUpdateSection.CUSTOM -> CustomUpdateWizard(
+                                versionName = availableVersion ?: BuildConfig.VERSION_NAME,
+                                onCancel = { navigate(WindowsUpdateSection.HOME) },
+                                onInstall = { if (downloaded) onInstall() else onDownloadAndInstall() }
+                            )
                             WindowsUpdateSection.HISTORY -> UpdateSubPage("Review your update history") {
                                 Text("The updates listed below have been installed or recently published for Windroid XP.", fontSize = 11.sp); Spacer(Modifier.height(12.dp)); Text("Current installed version: ${BuildConfig.VERSION_NAME}", fontSize = 11.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp))
                                 when { historyLoading -> Text("Please wait while Windows Update retrieves your history...", fontSize = 11.sp); history.isEmpty() -> Text("No update history is available.", fontSize = 11.sp); else -> history.take(5).forEachIndexed { i, item -> UpdateHistoryEntry(item); if (i < history.take(5).lastIndex) { Spacer(Modifier.height(8.dp)); Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFD6D6D6))); Spacer(Modifier.height(8.dp)) } } }
