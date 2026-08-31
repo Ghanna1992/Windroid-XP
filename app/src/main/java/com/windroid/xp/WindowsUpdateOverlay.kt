@@ -1,0 +1,109 @@
+package com.windroid.xp
+
+import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+
+@Composable
+fun WindowsUpdateOverlay(
+    context: Context,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var updateInfo by remember { mutableStateOf<UpdateManager.UpdateInfo?>(null) }
+    var status by remember { mutableStateOf("Checking for updates...") }
+    var progress by remember { mutableIntStateOf(-1) }
+    var downloaded by remember { mutableStateOf<java.io.File?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun check() {
+        progress = -1
+        downloaded = null
+        status = "Checking for updates..."
+        scope.launch {
+            when (val result = UpdateManager.checkForUpdate()) {
+                is UpdateManager.CheckResult.UpdateAvailable -> {
+                    updateInfo = result.update
+                    status = "Windroid XP ${result.update.versionName} is ready."
+                }
+                UpdateManager.CheckResult.UpToDate -> {
+                    updateInfo = null
+                    status = "Your computer is up to date."
+                }
+                is UpdateManager.CheckResult.Failed -> {
+                    updateInfo = null
+                    status = result.message
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { check() }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0x22000000))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) { }
+    )
+
+    Box(
+        modifier
+            .fillMaxWidth(0.96f)
+            .padding(bottom = 51.dp)
+    ) {
+        WindowsUpdatePage(
+            status = status,
+            progress = progress,
+            availableVersion = updateInfo?.versionName,
+            notes = updateInfo?.notes,
+            downloaded = downloaded != null,
+            onCheckAgain = { check() },
+            onDownloadAndInstall = {
+                val found = updateInfo ?: return@WindowsUpdatePage
+                progress = 0
+                status = "Downloading update..."
+                scope.launch {
+                    val file = UpdateManager.downloadUpdate(context, found) { value ->
+                        progress = value
+                    }
+                    if (file == null) {
+                        progress = -1
+                        status = "The update could not be downloaded. Try again later."
+                    } else {
+                        downloaded = file
+                        progress = 100
+                        status = "Download complete. Opening the Android installer..."
+                        val opened = UpdateManager.installUpdate(context, file)
+                        if (!opened) {
+                            status = "Allow installs from Windroid XP, then return and tap Install update."
+                        }
+                    }
+                }
+            },
+            onInstall = {
+                downloaded?.let { file ->
+                    val opened = UpdateManager.installUpdate(context, file)
+                    if (!opened) {
+                        status = "Allow installs from Windroid XP, then return and tap Install update again."
+                    }
+                }
+            },
+            onClose = onClose
+        )
+    }
+}
