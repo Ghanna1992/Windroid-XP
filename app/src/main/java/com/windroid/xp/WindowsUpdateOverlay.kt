@@ -6,10 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -76,8 +74,8 @@ fun WindowsUpdateOverlay(
 
     Box(
         modifier
-            .fillMaxWidth(0.96f)
-            .padding(bottom = 51.dp)
+            .fillMaxSize()
+            .padding(bottom = 43.dp)
     ) {
         WindowsUpdatePage(
             status = status,
@@ -96,9 +94,7 @@ fun WindowsUpdateOverlay(
                 progress = 0
                 status = "Downloading update..."
                 scope.launch {
-                    val file = UpdateManager.downloadUpdate(context, found) { value ->
-                        progress = value
-                    }
+                    val file = UpdateManager.downloadUpdate(context, found) { value -> progress = value }
                     if (file == null) {
                         progress = -1
                         status = "The update could not be downloaded. Try again later."
@@ -107,18 +103,14 @@ fun WindowsUpdateOverlay(
                         progress = 100
                         status = "Download complete. Opening the Android installer..."
                         val opened = UpdateManager.installUpdate(context, file)
-                        if (!opened) {
-                            status = "Allow installs from Windroid XP, then return and tap Install update."
-                        }
+                        if (!opened) status = "Allow installs from Windroid XP, then return and tap Install update."
                     }
                 }
             },
             onInstall = {
                 downloaded?.let { file ->
                     val opened = UpdateManager.installUpdate(context, file)
-                    if (!opened) {
-                        status = "Allow installs from Windroid XP, then return and tap Install update again."
-                    }
+                    if (!opened) status = "Allow installs from Windroid XP, then return and tap Install update again."
                 }
             },
             onClose = onClose
