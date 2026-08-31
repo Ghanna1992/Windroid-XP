@@ -26,15 +26,15 @@ fun WindowsUpdatePage(
     availableVersion: String?,
     notes: String?,
     downloaded: Boolean,
+    history: List<UpdateManager.UpdateHistoryItem> = emptyList(),
+    historyLoading: Boolean = false,
     onCheckAgain: () -> Unit,
     onDownloadAndInstall: () -> Unit,
     onInstall: () -> Unit,
     onClose: () -> Unit
 ) {
     var section by remember { mutableStateOf(WindowsUpdateSection.HOME) }
-    val blue = Color(0xFF4E7FD0)
     val darkBlue = Color(0xFF3A69B8)
-    val paleBlue = Color(0xFFE7EEF9)
     val gold = Color(0xFFF7E7A4)
     val isDownloading = progress in 0..99
     val hasUpdate = availableVersion != null
@@ -152,11 +152,17 @@ fun WindowsUpdatePage(
                                 Spacer(Modifier.height(5.dp))
                                 Text("$progress% complete", fontSize = 10.sp, color = Color(0xFF666666))
                             }
-                            notes?.takeIf { it.isNotBlank() }?.let {
+                            if (hasUpdate) {
                                 Spacer(Modifier.height(14.dp))
-                                Text("Update details", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Patch notes", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
                                 Spacer(Modifier.height(4.dp))
-                                Text(it.take(600), fontSize = 10.sp, color = Color(0xFF555555), maxLines = 12, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    cleanReleaseNotes(notes).ifBlank { "This update contains maintenance and compatibility improvements." },
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF555555),
+                                    maxLines = 14,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                             Spacer(Modifier.height(18.dp))
                             when {
@@ -171,17 +177,24 @@ fun WindowsUpdatePage(
 
                     WindowsUpdateSection.HISTORY -> {
                         UpdateSubPage("Review your update history") {
-                            Text("Current installed version", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text(BuildConfig.VERSION_NAME, fontSize = 11.sp, color = Color(0xFF444444))
-                            Spacer(Modifier.height(13.dp))
-                            if (availableVersion != null) {
-                                Text("Latest update found", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Text(availableVersion, fontSize = 11.sp, color = Color(0xFF444444))
-                            } else {
-                                Text("No newer update is currently queued for installation.", fontSize = 11.sp, color = Color(0xFF555555))
+                            Text("Current installed version: ${BuildConfig.VERSION_NAME}", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(12.dp))
+                            when {
+                                historyLoading -> Text("Loading recent updates...", fontSize = 11.sp, color = Color(0xFF555555))
+                                history.isEmpty() -> Text("Update history could not be loaded. Check your connection and try again later.", fontSize = 11.sp, color = Color(0xFF555555))
+                                else -> {
+                                    Text("Recent patches", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                                    Spacer(Modifier.height(7.dp))
+                                    history.take(5).forEachIndexed { index, item ->
+                                        UpdateHistoryEntry(item)
+                                        if (index != history.take(5).lastIndex) {
+                                            Spacer(Modifier.height(9.dp))
+                                            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE0E0E0)))
+                                            Spacer(Modifier.height(9.dp))
+                                        }
+                                    }
+                                }
                             }
-                            Spacer(Modifier.height(16.dp))
-                            Text("Full historical release tracking can be added later; this page currently shows the installed and detected release state.", fontSize = 9.sp, color = Color(0xFF777777))
                         }
                     }
 
@@ -211,6 +224,54 @@ fun WindowsUpdatePage(
             Text("Close", fontSize = 10.sp, color = Color(0xFF204F8A), modifier = Modifier.clickable { onClose() }.padding(8.dp))
         }
     }
+}
+
+@Composable
+private fun UpdateHistoryEntry(item: UpdateManager.UpdateHistoryItem) {
+    Text("Windroid XP ${item.versionName}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF244C80))
+    Text(formatReleaseDate(item.publishedAt), fontSize = 9.sp, color = Color(0xFF777777))
+    Spacer(Modifier.height(4.dp))
+    Text(
+        cleanReleaseNotes(item.notes).ifBlank { "Maintenance and compatibility improvements." },
+        fontSize = 10.sp,
+        color = Color(0xFF4E4E4E),
+        maxLines = 8,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+private fun formatReleaseDate(value: String): String {
+    if (value.length < 10) return "Date unavailable"
+    val raw = value.take(10)
+    val parts = raw.split('-')
+    if (parts.size != 3) return raw
+    val month = when (parts[1]) {
+        "01" -> "Jan"; "02" -> "Feb"; "03" -> "Mar"; "04" -> "Apr"
+        "05" -> "May"; "06" -> "Jun"; "07" -> "Jul"; "08" -> "Aug"
+        "09" -> "Sep"; "10" -> "Oct"; "11" -> "Nov"; "12" -> "Dec"
+        else -> parts[1]
+    }
+    return "$month ${parts[2].trimStart('0').ifBlank { "0" }}, ${parts[0]}"
+}
+
+private fun cleanReleaseNotes(raw: String?): String {
+    if (raw.isNullOrBlank()) return ""
+    return raw
+        .lineSequence()
+        .map { line ->
+            line.trim()
+                .removePrefix("### ")
+                .removePrefix("## ")
+                .removePrefix("# ")
+                .removePrefix("* ")
+                .removePrefix("- ")
+                .replace("**", "")
+                .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
+        }
+        .filter { it.isNotBlank() && !it.startsWith("Full Changelog", ignoreCase = true) }
+        .take(12)
+        .joinToString("\n")
+        .take(900)
 }
 
 @Composable
