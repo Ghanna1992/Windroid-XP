@@ -121,7 +121,7 @@ jobs:
           name: Windroid XP Dev ${{ env.VERSION_NAME }}
           prerelease: true
           make_latest: false
-          generate_release_notes: true
+          body_path: release-notes/current.md
           files: Windroid-XP-Dev.apk
 
       - name: Publish Stable release
@@ -132,7 +132,7 @@ jobs:
           name: Windroid XP ${{ env.VERSION_NAME }}
           prerelease: false
           make_latest: true
-          generate_release_notes: true
+          body_path: release-notes/current.md
           files: Windroid-XP.apk
 
       - name: Build fallback Dev debug APK
