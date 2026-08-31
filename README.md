@@ -12,6 +12,7 @@ A Windows XP-inspired Android home-screen replacement.
 - Live taskbar clock
 - GitHub Actions signed APK builds
 - Separate Dev and Stable update channels
+- XP-style internal window controls and updater progress
 
 ## Release channels
 - **Dev** is built from normal pushes to `main` and is used for active testing.
