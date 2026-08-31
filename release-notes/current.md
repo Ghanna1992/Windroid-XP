@@ -10,3 +10,4 @@
 - Start menu redesigned for a closer Windows XP layout and feel.
 - Expanded Start menu system shortcuts and classic navigation.
 - Improved All Programs browsing and recent-program presentation.
+- Start menu now uses the classic XP system-icon library throughout its system shortcuts.
