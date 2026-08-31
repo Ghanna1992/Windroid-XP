@@ -7,3 +7,6 @@
 - Improved Windows Update page behavior and update-state handling.
 - Added new Windows-style flavor and hidden extras throughout the update experience.
 - Added curated patch notes so future update history entries explain what each patch changes.
+- Start menu redesigned for a closer Windows XP layout and feel.
+- Expanded Start menu system shortcuts and classic navigation.
+- Improved All Programs browsing and recent-program presentation.
