@@ -394,14 +394,12 @@ fun WindroidDesktop(context: Context) {
         if (settingsOpen) AppearanceWindow(context, apps, backgrounds, iconFiles, selectedBackground, prefs, desktopPackages, hiddenBuiltinShortcuts, onBackgroundSelected = { fileName -> selectedBackground = fileName ?: DEFAULT_DESKTOP_BACKGROUND; prefs.edit().putString("desktop_background", selectedBackground).apply() }, onIconSelected = { id, fileName -> setIcon(id, fileName) }, onDesktopToggle = { pkg, enabled -> setDesktopApp(pkg, enabled) }, onBuiltinToggle = { id, visible -> setBuiltinShortcutVisible(id, visible) }, onClose = { settingsOpen = false }, modifier = Modifier.align(Alignment.Center))
 
         if (updateWindowOpen) {
-            Box(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { })
-            XPWindow("Windows Update", Modifier.align(Alignment.Center), onClose = { updateWindowOpen = false }) {
-                Row(verticalAlignment = Alignment.CenterVertically) { xpIcon(context, "update")?.let { Image(bitmap = it, contentDescription = null, modifier = Modifier.size(26.dp)); Spacer(Modifier.width(8.dp)) }; Text("Automatic Updates", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
-                Spacer(Modifier.height(10.dp)); Text(updateStatus, fontSize = 13.sp); if (updateProgress in 0..100) { Spacer(Modifier.height(10.dp)); XPProgressBar(updateProgress); Spacer(Modifier.height(4.dp)); Text("$updateProgress%", fontSize = 10.sp, color = Color(0xFF555555)) }; updateInfo?.notes?.takeIf { it.isNotBlank() }?.let { Spacer(Modifier.height(8.dp)); Text(it.take(280), fontSize = 11.sp, maxLines = 6, overflow = TextOverflow.Ellipsis) }; Spacer(Modifier.height(15.dp)); val readyFile = downloadedUpdate; val found = updateInfo
-                if (readyFile != null) { XPActionButton("Install update") { val opened = UpdateManager.installUpdate(context, readyFile); if (!opened) updateStatus = "Allow installs from Windroid XP, then return and tap Install update again." }; Spacer(Modifier.height(8.dp)) } else if (found != null) { XPActionButton("Download and install") { updateProgress = 0; updateStatus = "Downloading update..."; updateScope.launch { val file = UpdateManager.downloadUpdate(context, found) { progress -> updateProgress = progress }; if (file == null) { updateProgress = -1; updateStatus = "The update could not be downloaded. Try again later." } else { downloadedUpdate = file; updateProgress = 100; updateStatus = "Download complete. Opening the Android installer..."; val opened = UpdateManager.installUpdate(context, file); if (!opened) updateStatus = "Allow installs from Windroid XP, then return and tap Install update." } } }; Spacer(Modifier.height(8.dp)) } else { XPActionButton("Check again") { checkForUpdates(true) }; Spacer(Modifier.height(8.dp)) }
-                Text("Remind me later", color = Color(0xFF003399), fontSize = 12.sp, modifier = Modifier.clickable { updateWindowOpen = false })
-            }
-        }
+    WindowsUpdateOverlay(
+        context = context,
+        onClose = { updateWindowOpen = false },
+        modifier = Modifier.align(Alignment.Center)
+    )
+}
 
         taskbarContextApp?.let { app -> androidx.compose.ui.window.Popup(alignment = Alignment.BottomCenter, offset = IntOffset(0, -52), onDismissRequest = { taskbarContextApp = null }, properties = androidx.compose.ui.window.PopupProperties(focusable = true)) { Column(Modifier.width(205.dp).shadow(10.dp).background(Color(0xFFF5F4EA)).border(1.dp, Color(0xFF7F9DB9)).padding(5.dp)) { Text(app.label, fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(6.dp)); ContextMenuRow("Open") { taskbarContextApp = null; openAndroidApp(app) }; ContextMenuRow("App Info") { taskbarContextApp = null; openAppInfo(context, app.packageName) }; ContextMenuRow("Remove from Taskbar") { removeTaskbarApp(app) }; ContextMenuRow("Cancel") { taskbarContextApp = null } } } }
 
