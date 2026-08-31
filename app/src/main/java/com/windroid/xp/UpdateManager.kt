@@ -125,11 +125,15 @@ object UpdateManager {
         update: UpdateInfo,
         onProgress: (Int) -> Unit = {}
     ): File? = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
+        var apk: File? = null
         try {
             onProgress(0)
             val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
-            val apk = File(updateDir, "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}-${update.versionName}.apk")
-            val connection = (URL(update.downloadUrl).openConnection() as HttpURLConnection).apply {
+            apk = File(updateDir, "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}-${update.versionName}.apk")
+            if (apk.exists()) apk.delete()
+
+            connection = (URL(update.downloadUrl).openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = true
                 connectTimeout = 15000
                 readTimeout = 30000
@@ -137,10 +141,7 @@ object UpdateManager {
                 setRequestProperty("Cache-Control", "no-cache")
                 setRequestProperty("User-Agent", "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}/${BuildConfig.VERSION_NAME}")
             }
-            if (connection.responseCode !in 200..299) {
-                connection.disconnect()
-                return@withContext null
-            }
+            if (connection.responseCode !in 200..299) return@withContext null
 
             val totalBytes = connection.contentLengthLong
             connection.inputStream.use { input ->
@@ -163,11 +164,13 @@ object UpdateManager {
                     }
                 }
             }
-            connection.disconnect()
             onProgress(100)
             apk
         } catch (_: Exception) {
+            apk?.delete()
             null
+        } finally {
+            connection?.disconnect()
         }
     }
 
