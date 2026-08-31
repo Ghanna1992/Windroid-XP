@@ -35,11 +35,13 @@ object CustomIconLibrary {
             .filter { it.isFile && extensionOf(it.name) in supportedExtensions }
             .sortedBy { it.name.lowercase(Locale.ROOT) }
 
-    fun load(file: File): ImageBitmap? = try {
-        if (!file.exists() || !file.isFile) return null
-        BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
-    } catch (_: Exception) {
-        null
+    fun load(file: File): ImageBitmap? {
+        return try {
+            if (!file.exists() || !file.isFile) null
+            else BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun fileForId(context: Context, id: String?): File? {
@@ -128,7 +130,7 @@ object CustomIconLibrary {
 
     private fun importZip(context: Context, uri: Uri): ImportResult {
         val temp = File.createTempFile("icon-import-", ".zip", context.cacheDir)
-        try {
+        return try {
             var zipBytes = 0L
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(temp).use { output ->
