@@ -20,12 +20,18 @@ import java.net.URL
 object UpdateManager {
     private const val STABLE_RELEASE_API_URL =
         "https://api.github.com/repos/Ghanna1992/Windroid-XP/releases/latest"
-    private const val DEV_RELEASES_API_URL =
+    private const val RELEASES_API_URL =
         "https://api.github.com/repos/Ghanna1992/Windroid-XP/releases?per_page=100&page=1"
 
     data class UpdateInfo(
         val versionName: String,
         val downloadUrl: String,
+        val notes: String
+    )
+
+    data class UpdateHistoryItem(
+        val versionName: String,
+        val publishedAt: String,
         val notes: String
     )
 
@@ -39,18 +45,8 @@ object UpdateManager {
         var connection: HttpURLConnection? = null
         try {
             val isDev = BuildConfig.UPDATE_CHANNEL == "dev"
-            val endpoint = if (isDev) "$DEV_RELEASES_API_URL&_=${System.currentTimeMillis()}" else STABLE_RELEASE_API_URL
-            connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 8000
-                readTimeout = 8000
-                useCaches = false
-                setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("Cache-Control", "no-cache")
-                setRequestProperty("Pragma", "no-cache")
-                setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-                setRequestProperty("User-Agent", "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}/${BuildConfig.VERSION_NAME}")
-            }
+            val endpoint = if (isDev) "$RELEASES_API_URL&_=${System.currentTimeMillis()}" else STABLE_RELEASE_API_URL
+            connection = openApiConnection(endpoint)
 
             val response = connection.responseCode
             if (response !in 200..299) {
@@ -96,6 +92,59 @@ object UpdateManager {
             connection?.disconnect()
         }
     }
+
+    suspend fun loadUpdateHistory(limit: Int = 5): List<UpdateHistoryItem> = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
+        try {
+            val isDev = BuildConfig.UPDATE_CHANNEL == "dev"
+            connection = openApiConnection("$RELEASES_API_URL&_=${System.currentTimeMillis()}")
+            if (connection.responseCode !in 200..299) return@withContext emptyList()
+
+            val releases = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+            val history = mutableListOf<UpdateHistoryItem>()
+            for (i in 0 until releases.length()) {
+                val release = releases.optJSONObject(i) ?: continue
+                if (release.optBoolean("draft", false)) continue
+                val prerelease = release.optBoolean("prerelease", false)
+                if (isDev != prerelease) continue
+
+                val tag = release.optString("tag_name")
+                val version = if (isDev) {
+                    if (!tag.startsWith("dev-v")) continue
+                    tag.removePrefix("dev-v")
+                } else {
+                    if (!tag.startsWith("v") || tag.startsWith("dev-v")) continue
+                    tag.removePrefix("v")
+                }
+                if (version.isBlank()) continue
+
+                history += UpdateHistoryItem(
+                    versionName = version,
+                    publishedAt = release.optString("published_at"),
+                    notes = release.optString("body")
+                )
+                if (history.size >= limit.coerceAtLeast(1)) break
+            }
+            history
+        } catch (_: Exception) {
+            emptyList()
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    private fun openApiConnection(endpoint: String): HttpURLConnection =
+        (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 8000
+            readTimeout = 8000
+            useCaches = false
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("Cache-Control", "no-cache")
+            setRequestProperty("Pragma", "no-cache")
+            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+            setRequestProperty("User-Agent", "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}/${BuildConfig.VERSION_NAME}")
+        }
 
     private fun findLatestDevRelease(releases: JSONArray): JSONObject? {
         var bestRelease: JSONObject? = null
