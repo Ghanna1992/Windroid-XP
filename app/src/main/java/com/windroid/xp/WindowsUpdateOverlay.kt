@@ -13,14 +13,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
+private const val UPDATE_PREFS = "windroid_update_settings"
+private const val AUTO_UPDATE_CHECKS = "automatic_update_checks"
+
 @Composable
 fun WindowsUpdateOverlay(
     context: Context,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val prefs = remember { context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE) }
+    var automaticChecks by remember { mutableStateOf(prefs.getBoolean(AUTO_UPDATE_CHECKS, true)) }
     var updateInfo by remember { mutableStateOf<UpdateManager.UpdateInfo?>(null) }
-    var status by remember { mutableStateOf("Checking for updates...") }
+    var status by remember { mutableStateOf(if (automaticChecks) "Checking for updates..." else "Automatic update checks are turned off.") }
     var progress by remember { mutableIntStateOf(-1) }
     var downloaded by remember { mutableStateOf<java.io.File?>(null) }
     var history by remember { mutableStateOf<List<UpdateManager.UpdateHistoryItem>>(emptyList()) }
@@ -58,25 +63,18 @@ fun WindowsUpdateOverlay(
     }
 
     LaunchedEffect(Unit) {
-        check()
+        if (automaticChecks) check()
         loadHistory()
     }
 
     Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0x22000000))
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() }
-            ) { }
+        Modifier.fillMaxSize().background(Color(0x22000000)).clickable(
+            indication = null,
+            interactionSource = remember { MutableInteractionSource() }
+        ) { }
     )
 
-    Box(
-        modifier
-            .fillMaxSize()
-            .padding(bottom = 43.dp)
-    ) {
+    Box(modifier.fillMaxSize().padding(bottom = 43.dp)) {
         WindowsUpdatePage(
             status = status,
             progress = progress,
@@ -85,10 +83,13 @@ fun WindowsUpdateOverlay(
             downloaded = downloaded != null,
             history = history,
             historyLoading = historyLoading,
-            onCheckAgain = {
-                check()
-                loadHistory()
+            automaticChecks = automaticChecks,
+            onAutomaticChecksChanged = { enabled ->
+                automaticChecks = enabled
+                prefs.edit().putBoolean(AUTO_UPDATE_CHECKS, enabled).apply()
+                if (enabled) check() else status = "Automatic update checks are turned off. You can still check manually at any time."
             },
+            onCheckAgain = { check(); loadHistory() },
             onDownloadAndInstall = {
                 val found = updateInfo ?: return@WindowsUpdatePage
                 progress = 0
