@@ -62,17 +62,21 @@ fun XpStartMenu(
     var contextApp by remember { mutableStateOf<LaunchableApp?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
-    BackHandler(enabled = showAllPrograms || showSearch || showPower || showRecentDocs || showMusic || showHelp || showPrinters || contextApp != null) {
-        when {
-            contextApp != null -> contextApp = null
-            showPower -> showPower = false
-            showSearch -> { showSearch = false; searchQuery = "" }
-            showRecentDocs -> showRecentDocs = false
-            showMusic -> showMusic = false
-            showHelp -> showHelp = false
-            showPrinters -> showPrinters = false
-            else -> showAllPrograms = false
-        }
+    fun dismissNotice() {
+        showSearch = false
+        showPower = false
+        showRecentDocs = false
+        showMusic = false
+        showHelp = false
+        showPrinters = false
+        contextApp = null
+        searchQuery = ""
+    }
+
+    val noticeOpen = showSearch || showPower || showRecentDocs || showMusic || showHelp || showPrinters || contextApp != null
+
+    BackHandler(enabled = showAllPrograms || noticeOpen) {
+        if (noticeOpen) dismissNotice() else showAllPrograms = false
     }
 
     val blueTop = Color(0xFF1F6CD2)
@@ -160,6 +164,17 @@ fun XpStartMenu(
                 Spacer(Modifier.width(18.dp))
                 XpFooterAction(context, "Power.png", "Turn Off Computer") { showPower = true }
             }
+        }
+
+        if (noticeOpen) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ) { dismissNotice() }
+            )
         }
 
         if (showSearch) XpStartPopup(Modifier.align(Alignment.Center), "Search") {
