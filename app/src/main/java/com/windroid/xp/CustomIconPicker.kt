@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun CustomIconPicker(
     context: Context,
-    onSelected: (String) -> Unit,
+    onSelected: ((String) -> Unit)? = null,
     onBack: () -> Unit
 ) {
     var revision by remember { mutableIntStateOf(0) }
@@ -55,7 +55,12 @@ fun CustomIconPicker(
 
     Column {
         Text("My Icons", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-        Text("Import your own images or a ZIP. Icons are copied into Windroid XP and survive app updates.", fontSize = 9.sp, color = Color(0xFF666666))
+        Text(
+            if (onSelected != null) "Import your own images or a ZIP, then tap one to use it."
+            else "Import and manage your personal icon library. Icons survive app updates.",
+            fontSize = 9.sp,
+            color = Color(0xFF666666)
+        )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             SmallXpButton("Import Images") { imagePicker.launch(arrayOf("image/png", "image/jpeg", "image/webp")) }
@@ -70,7 +75,8 @@ fun CustomIconPicker(
             files.forEach { file ->
                 val id = CustomIconLibrary.idFor(file)
                 val image = remember(revision, file.absolutePath) { CustomIconLibrary.load(file) }
-                Row(Modifier.fillMaxWidth().clickable { onSelected(id) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                val rowModifier = if (onSelected != null) Modifier.fillMaxWidth().clickable { onSelected(id) } else Modifier.fillMaxWidth()
+                Row(rowModifier.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(42.dp).background(Color.White).border(1.dp, Color(0xFFB7B7B7)), contentAlignment = Alignment.Center) {
                         if (image != null) Image(bitmap = image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                     }
