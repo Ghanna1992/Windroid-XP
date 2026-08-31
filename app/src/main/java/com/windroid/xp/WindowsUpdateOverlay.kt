@@ -25,6 +25,8 @@ fun WindowsUpdateOverlay(
     var status by remember { mutableStateOf("Checking for updates...") }
     var progress by remember { mutableIntStateOf(-1) }
     var downloaded by remember { mutableStateOf<java.io.File?>(null) }
+    var history by remember { mutableStateOf<List<UpdateManager.UpdateHistoryItem>>(emptyList()) }
+    var historyLoading by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
 
     fun check() {
@@ -49,7 +51,18 @@ fun WindowsUpdateOverlay(
         }
     }
 
-    LaunchedEffect(Unit) { check() }
+    fun loadHistory() {
+        historyLoading = true
+        scope.launch {
+            history = UpdateManager.loadUpdateHistory(5)
+            historyLoading = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        check()
+        loadHistory()
+    }
 
     Box(
         Modifier
@@ -72,7 +85,12 @@ fun WindowsUpdateOverlay(
             availableVersion = updateInfo?.versionName,
             notes = updateInfo?.notes,
             downloaded = downloaded != null,
-            onCheckAgain = { check() },
+            history = history,
+            historyLoading = historyLoading,
+            onCheckAgain = {
+                check()
+                loadHistory()
+            },
             onDownloadAndInstall = {
                 val found = updateInfo ?: return@WindowsUpdatePage
                 progress = 0
