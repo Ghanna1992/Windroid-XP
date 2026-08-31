@@ -54,6 +54,7 @@ fun XpStartMenu(
 ) {
     var showAllPrograms by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var searchInteractionArmed by remember { mutableStateOf(false) }
     var showPower by remember { mutableStateOf(false) }
     var showRecentDocs by remember { mutableStateOf(false) }
     var showMusic by remember { mutableStateOf(false) }
@@ -61,6 +62,16 @@ fun XpStartMenu(
     var showPrinters by remember { mutableStateOf(false) }
     var contextApp by remember { mutableStateOf<LaunchableApp?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+
+    LaunchedEffect(showSearch) {
+        if (showSearch) {
+            searchInteractionArmed = false
+            kotlinx.coroutines.delay(140)
+            searchInteractionArmed = true
+        } else {
+            searchInteractionArmed = false
+        }
+    }
 
     fun dismissNotice() {
         showSearch = false
@@ -152,7 +163,11 @@ fun XpStartMenu(
                     XpSystemMenuRow(context, "Control Panel.png", "Control Panel", bold = true) { onOpenControlPanel() }
                     XpSystemMenuRow(context, "Printers and Faxes.png", "Printers and Faxes") { showPrinters = true }
                     XpStartSeparator(right = true)
-                    XpSystemMenuRow(context, "Search.png", "Search", arrow = true) { showSearch = true; showAllPrograms = false }
+                    XpSystemMenuRow(context, "Search.png", "Search", arrow = true) {
+                        searchInteractionArmed = false
+                        showSearch = true
+                        showAllPrograms = false
+                    }
                     XpSystemMenuRow(context, "Help and Support.png", "Help and Support") { showHelp = true }
                     XpSystemMenuRow(context, "Run.png", "Run...") { onOpenRun() }
                     Spacer(Modifier.weight(1f))
@@ -214,6 +229,17 @@ fun XpStartMenu(
                 XpPopupLink("App Info") { contextApp = null; try { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = android.net.Uri.parse("package:${app.packageName}") }) } catch (_: Exception) { } }
                 XpPopupLink("Cancel") { contextApp = null }
             }
+        }
+
+        if (showSearch && !searchInteractionArmed) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ) { }
+            )
         }
     }
 }
