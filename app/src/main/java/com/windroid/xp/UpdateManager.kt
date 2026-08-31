@@ -39,8 +39,6 @@ object UpdateManager {
         var connection: HttpURLConnection? = null
         try {
             val isDev = BuildConfig.UPDATE_CHANNEL == "dev"
-            // Add a harmless cache-buster for Dev. During active testing we can publish several
-            // prereleases within minutes and do not want a cached release list hiding them.
             val endpoint = if (isDev) "$DEV_RELEASES_API_URL&_=${System.currentTimeMillis()}" else STABLE_RELEASE_API_URL
             connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -122,8 +120,13 @@ object UpdateManager {
         return bestRelease
     }
 
-    suspend fun downloadUpdate(context: Context, update: UpdateInfo): File? = withContext(Dispatchers.IO) {
+    suspend fun downloadUpdate(
+        context: Context,
+        update: UpdateInfo,
+        onProgress: (Int) -> Unit = {}
+    ): File? = withContext(Dispatchers.IO) {
         try {
+            onProgress(0)
             val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
             val apk = File(updateDir, "Windroid-XP-${BuildConfig.UPDATE_CHANNEL}-${update.versionName}.apk")
             val connection = (URL(update.downloadUrl).openConnection() as HttpURLConnection).apply {
@@ -138,10 +141,30 @@ object UpdateManager {
                 connection.disconnect()
                 return@withContext null
             }
+
+            val totalBytes = connection.contentLengthLong
             connection.inputStream.use { input ->
-                FileOutputStream(apk).use { output -> input.copyTo(output) }
+                FileOutputStream(apk).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var downloaded = 0L
+                    var read: Int
+                    var lastProgress = -1
+                    while (input.read(buffer).also { read = it } >= 0) {
+                        if (read == 0) continue
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (totalBytes > 0) {
+                            val progress = ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
+                            if (progress != lastProgress) {
+                                lastProgress = progress
+                                onProgress(progress)
+                            }
+                        }
+                    }
+                }
             }
             connection.disconnect()
+            onProgress(100)
             apk
         } catch (_: Exception) {
             null
