@@ -1,0 +1,86 @@
+name: One-shot MainActivity extraction
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/refactor-main-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    if: ${{ !contains(github.event.head_commit.message, '[refactor-main]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract launcher platform helpers
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main_path = Path('app/src/main/java/com/windroid/xp/MainActivity.kt')
+          out_path = Path('app/src/main/java/com/windroid/xp/LauncherPlatform.kt')
+          text = main_path.read_text()
+
+          start_marker = 'data class LaunchableApp('
+          end_marker = '@Composable\nfun WindroidDesktop'
+          start = text.index(start_marker)
+          end = text.index(end_marker)
+          block = text[start:end].rstrip() + '\n'
+
+          # These declarations were file-private only because they lived in MainActivity.kt.
+          # Make them module-visible so MainActivity can keep using the exact same API.
+          block = block.replace('private const val DEFAULT_DESKTOP_BACKGROUND', 'internal const val DEFAULT_DESKTOP_BACKGROUND')
+          for name in [
+              'installedApps', 'defaultXpAppIcon', 'launchApp', 'openAppInfo',
+              'listAssetImages', 'loadAssetImage', 'loadStartButtonImage',
+              'iconPrefKey', 'desktopPositionKey', 'xpIcon',
+              'openDefaultBrowser', 'openDocuments'
+          ]:
+              block = block.replace(f'private fun {name}', f'internal fun {name}')
+
+          header = '''package com.windroid.xp
+
+import android.content.Context
+import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.provider.Settings
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
+
+'''
+          out_path.write_text(header + block)
+          main_path.write_text(text[:start] + text[end:])
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile Dev build before committing
+        run: gradle assembleDevDebug
+
+      - name: Commit extraction only after successful build
+        shell: bash
+        run: |
+          git config user.name 'Ghanna1992'
+          git config user.email 'geradhanna@gmail.com'
+          git add app/src/main/java/com/windroid/xp/MainActivity.kt app/src/main/java/com/windroid/xp/LauncherPlatform.kt
+          git commit -m '[refactor-main] Extract launcher platform helpers from MainActivity'
+          git push origin main
