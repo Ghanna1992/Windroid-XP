@@ -18,3 +18,4 @@
 - Fixed a Windows Update race where repeated install taps could launch competing updater jobs.
 - Windows Update now locks its install controls as soon as an update starts and rejects duplicate launch attempts.
 - Control Panel redesigned around the classic Windows XP category view while preserving Windows Update and About access.
+- Control Panel now adapts its sidebar, category layout, spacing, and icon scale to phone and larger-screen widths.
