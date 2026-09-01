@@ -32,8 +32,7 @@ fun CustomUpdateWizard(
         Box(
             Modifier.fillMaxWidth().height(55.dp)
                 .background(Brush.horizontalGradient(listOf(Color(0xFFFFF7CB), Color(0xFFFFE99C), Color(0xFFF3B35C))))
-                .padding(horizontal = 17.dp),
-            contentAlignment = Alignment.CenterStart
+                .padding(horizontal = 17.dp)
         ) {
             Text(
                 when (step) {
@@ -44,14 +43,23 @@ fun CustomUpdateWizard(
                     else -> "Review and install updates"
                 },
                 fontSize = 22.sp,
-                color = Color(0xFF3A3A3A)
+                color = Color(0xFF3A3A3A),
+                modifier = Modifier.align(Alignment.CenterStart)
+            )
+            WindroidBrandAsset(
+                wordmark = true,
+                modifier = Modifier.align(Alignment.CenterEnd).width(118.dp).height(34.dp)
             )
         }
 
         Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp)) {
             when (step) {
                 0 -> {
-                    Text("Windows Update is preparing a custom installation for Windroid XP $versionName.", fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        WindroidBrandAsset(wordmark = false, modifier = Modifier.size(54.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Windows Update is preparing a custom installation for Windroid XP $versionName.", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    }
                     Spacer(Modifier.height(12.dp))
                     Text("Custom installation lets you review completely unnecessary options before installing the same update package.", fontSize = 10.sp, color = Color(0xFF555555))
                     Spacer(Modifier.height(18.dp))
@@ -91,9 +99,14 @@ fun CustomUpdateWizard(
                     Text("All options ultimately use the same signed Windroid XP release download.", fontSize = 9.sp, color = Color(0xFF777777))
                 }
                 else -> {
-                    Text("Windows Update is ready to install the following update:", fontSize = 11.sp)
-                    Spacer(Modifier.height(12.dp))
-                    Text("Windroid XP $versionName", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF174A8B))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        WindroidBrandAsset(wordmark = false, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("Windows Update is ready to install the following update:", fontSize = 11.sp)
+                            Text("Windroid XP $versionName", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF174A8B))
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
                     Text("Selected classifications:", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text(listOfNotNull(if (critical) "Critical" else null, if (recommended) "Recommended" else null, if (drivers) "Drivers" else null).ifEmpty { listOf("None, somehow") }.joinToString(", "), fontSize = 10.sp)
