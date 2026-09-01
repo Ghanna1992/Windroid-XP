@@ -1,0 +1,63 @@
+name: Safe Control Panel Swap
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/swap-control-panel.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Replace only old Control Panel block
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/com/windroid/xp/MainActivity.kt')
+          text = p.read_text()
+          old = '''        if (controlPanelOpen) XPWindow("Control Panel", Modifier.align(Alignment.Center), onClose = { controlPanelOpen = false }) {
+            Text("Pick a category", fontSize = 13.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); XPSystemRow(context, "appearance", "Appearance and Themes") { controlPanelOpen = false; settingsOpen = true }; XPSystemRow(context, "programs", "Add or Remove Programs") { context.startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS)) }; XPSystemRow(context, "network", "Network Connections") { context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }; XPSystemRow(context, "user", "User Accounts") { controlPanelOpen = false; profileOpen = true }; XPSystemRow(context, "update", "Automatic Updates") { controlPanelOpen = false; checkForUpdates(true) }; XPSystemRow(context, "settings", "Android System Settings") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }; XPSystemRow(context, "computer", "About Windroid XP") { controlPanelOpen = false; aboutOpen = true }; XPSystemRow(context, "back", "Restore Windroid Defaults") { resetConfirmOpen = true }
+        }
+'''
+          new = '''        if (controlPanelOpen) XpControlPanel(
+            onClose = { controlPanelOpen = false },
+            onAppearance = { controlPanelOpen = false; settingsOpen = true },
+            onUserAccounts = { controlPanelOpen = false; profileOpen = true },
+            onWindowsUpdate = { controlPanelOpen = false; checkForUpdates(true) },
+            onAbout = { controlPanelOpen = false; aboutOpen = true },
+            onRestoreDefaults = { resetConfirmOpen = true },
+            modifier = Modifier.align(Alignment.Center)
+        )
+'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'Refusing Control Panel swap: expected exactly 1 old block, found {count}')
+          p.write_text(text.replace(old, new, 1))
+
+          notes = Path('release-notes/current.md')
+          note_text = notes.read_text() if notes.exists() else "### What's new\n"
+          line = '- Control Panel redesigned around the classic Windows XP category view while preserving Windows Update and About access.'
+          if line not in note_text:
+              note_text = note_text.rstrip() + '\n' + line + '\n'
+          notes.write_text(note_text)
+          PY
+
+          rm .github/workflows/swap-control-panel.yml
+
+          git config user.name "Windroid XP Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/src/main/java/com/windroid/xp/MainActivity.kt release-notes/current.md .github/workflows/swap-control-panel.yml
+          git diff --cached --check
+          git commit -m "Use XP category Control Panel"
+          git push
