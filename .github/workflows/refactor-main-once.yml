@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   extract:
-    if: ${{ !contains(github.event.head_commit.message, '[refactor-main]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,8 +34,6 @@ jobs:
           end = text.index(end_marker)
           block = text[start:end].rstrip() + '\n'
 
-          # These declarations were file-private only because they lived in MainActivity.kt.
-          # Make them module-visible so MainActivity can keep using the exact same API.
           block = block.replace('private const val DEFAULT_DESKTOP_BACKGROUND', 'internal const val DEFAULT_DESKTOP_BACKGROUND')
           for name in [
               'installedApps', 'defaultXpAppIcon', 'launchApp', 'openAppInfo',
