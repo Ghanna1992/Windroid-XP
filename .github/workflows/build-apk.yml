@@ -39,10 +39,9 @@ jobs:
           fi
           python3 scripts/control_panel_swap.py
           rm -f .control-panel-swap scripts/control_panel_swap.py
-          git checkout HEAD^ -- .github/workflows/build-apk.yml
           git config user.name "Windroid XP Builder"
           git config user.email "actions@users.noreply.github.com"
-          git add -A
+          git add app/src/main/java/com/windroid/xp/MainActivity.kt release-notes/current.md .control-panel-swap scripts/control_panel_swap.py
           git diff --cached --check
           git commit -m "Use XP category Control Panel"
           git push
