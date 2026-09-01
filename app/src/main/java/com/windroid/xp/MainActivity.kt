@@ -379,9 +379,15 @@ fun WindroidDesktop(context: Context) {
             XPSystemRow(context, "storage", "Internal Storage") { openDocuments(context) }; XPSystemRow(context, "documents", "My Documents") { openDocuments(context) }; XPSystemRow(context, "control", "Control Panel") { computerOpen = false; controlPanelOpen = true }; XPSystemRow(context, "settings", "Android Settings") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }; XPSystemRow(context, "computer", "About Windroid XP") { computerOpen = false; aboutOpen = true }; Spacer(Modifier.height(10.dp)); XPActionButton("Close") { computerOpen = false }
         }
 
-        if (controlPanelOpen) XPWindow("Control Panel", Modifier.align(Alignment.Center), onClose = { controlPanelOpen = false }) {
-            Text("Pick a category", fontSize = 13.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); XPSystemRow(context, "appearance", "Appearance and Themes") { controlPanelOpen = false; settingsOpen = true }; XPSystemRow(context, "programs", "Add or Remove Programs") { context.startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS)) }; XPSystemRow(context, "network", "Network Connections") { context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }; XPSystemRow(context, "user", "User Accounts") { controlPanelOpen = false; profileOpen = true }; XPSystemRow(context, "update", "Automatic Updates") { controlPanelOpen = false; checkForUpdates(true) }; XPSystemRow(context, "settings", "Android System Settings") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }; XPSystemRow(context, "computer", "About Windroid XP") { controlPanelOpen = false; aboutOpen = true }; XPSystemRow(context, "back", "Restore Windroid Defaults") { resetConfirmOpen = true }
-        }
+        if (controlPanelOpen) XpControlPanel(
+            onClose = { controlPanelOpen = false },
+            onAppearance = { controlPanelOpen = false; settingsOpen = true },
+            onUserAccounts = { controlPanelOpen = false; profileOpen = true },
+            onWindowsUpdate = { controlPanelOpen = false; checkForUpdates(true) },
+            onAbout = { controlPanelOpen = false; aboutOpen = true },
+            onRestoreDefaults = { resetConfirmOpen = true },
+            modifier = Modifier.align(Alignment.Center)
+        )
 
         if (recycleOpen) XPWindow("Recycle Bin", Modifier.align(Alignment.Center), onClose = { recycleOpen = false }) {
             Text("Removed desktop shortcuts", fontSize = 13.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); val removedApps = apps.filter { it.packageName in removedDesktopPackages }
