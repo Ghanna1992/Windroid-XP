@@ -15,3 +15,4 @@
 - Taskbar notification area redesigned with an XP-style expandable tray.
 - Active Android notification apps can now appear as taskbar tray icons.
 - Added a one-time notification-access setup path for the Windroid tray.
+- Fixed a Windows Update race where repeated install taps could launch competing updater jobs.
