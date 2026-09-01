@@ -1,10 +1,12 @@
 name: Safe Control Panel Swap
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
-      - '.github/workflows/swap-control-panel.yml'
+      - .github/workflows/swap-control-panel.yml
 
 permissions:
   contents: write
@@ -13,23 +15,31 @@ jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Replace only old Control Panel block
-        shell: bash
+      - name: Patch Control Panel
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          p = Path('app/src/main/java/com/windroid/xp/MainActivity.kt')
+          p = Path("app/src/main/java/com/windroid/xp/MainActivity.kt")
           text = p.read_text()
-          old = '''        if (controlPanelOpen) XPWindow("Control Panel", Modifier.align(Alignment.Center), onClose = { controlPanelOpen = false }) {
-            Text("Pick a category", fontSize = 13.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); XPSystemRow(context, "appearance", "Appearance and Themes") { controlPanelOpen = false; settingsOpen = true }; XPSystemRow(context, "programs", "Add or Remove Programs") { context.startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS)) }; XPSystemRow(context, "network", "Network Connections") { context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }; XPSystemRow(context, "user", "User Accounts") { controlPanelOpen = false; profileOpen = true }; XPSystemRow(context, "update", "Automatic Updates") { controlPanelOpen = false; checkForUpdates(true) }; XPSystemRow(context, "settings", "Android System Settings") { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }; XPSystemRow(context, "computer", "About Windroid XP") { controlPanelOpen = false; aboutOpen = true }; XPSystemRow(context, "back", "Restore Windroid Defaults") { resetConfirmOpen = true }
-        }
-'''
+          start_marker = '        if (controlPanelOpen) XPWindow("Control Panel", Modifier.align(Alignment.Center), onClose = { controlPanelOpen = false }) {'
+          end_marker = '\n\n        if (recycleOpen) XPWindow("Recycle Bin"'
+          if text.count(start_marker) != 1:
+              raise SystemExit(f"Refusing swap: expected one Control Panel start, found {text.count(start_marker)}")
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          old = text[start:end]
+          required = [
+              'XPSystemRow(context, "update", "Automatic Updates")',
+              'XPSystemRow(context, "computer", "About Windroid XP")',
+              'XPSystemRow(context, "back", "Restore Windroid Defaults")'
+          ]
+          for token in required:
+              if token not in old:
+                  raise SystemExit(f"Refusing swap: safety token missing: {token}")
           new = '''        if (controlPanelOpen) XpControlPanel(
             onClose = { controlPanelOpen = false },
             onAppearance = { controlPanelOpen = false; settingsOpen = true },
@@ -38,23 +48,17 @@ jobs:
             onAbout = { controlPanelOpen = false; aboutOpen = true },
             onRestoreDefaults = { resetConfirmOpen = true },
             modifier = Modifier.align(Alignment.Center)
-        )
-'''
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'Refusing Control Panel swap: expected exactly 1 old block, found {count}')
-          p.write_text(text.replace(old, new, 1))
+        )'''
+          p.write_text(text[:start] + new + text[end:])
 
-          notes = Path('release-notes/current.md')
-          note_text = notes.read_text() if notes.exists() else "### What's new\n"
+          notes = Path("release-notes/current.md")
+          body = notes.read_text()
           line = '- Control Panel redesigned around the classic Windows XP category view while preserving Windows Update and About access.'
-          if line not in note_text:
-              note_text = note_text.rstrip() + '\n' + line + '\n'
-          notes.write_text(note_text)
+          if line not in body:
+              notes.write_text(body.rstrip() + "\n" + line + "\n")
           PY
 
           rm .github/workflows/swap-control-panel.yml
-
           git config user.name "Windroid XP Builder"
           git config user.email "actions@users.noreply.github.com"
           git add app/src/main/java/com/windroid/xp/MainActivity.kt release-notes/current.md .github/workflows/swap-control-panel.yml
