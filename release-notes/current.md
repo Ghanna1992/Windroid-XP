@@ -19,3 +19,5 @@
 - Windows Update now locks its install controls as soon as an update starts and rejects duplicate launch attempts.
 - Control Panel redesigned around the classic Windows XP category view while preserving Windows Update and About access.
 - Control Panel now adapts its sidebar, category layout, spacing, and icon scale to phone and larger-screen widths.
+- Filled the remaining Control Panel category icon gaps using the existing XP asset library.
+- Added reusable Windroid logo and wordmark rendering and introduced the new branding into the update experience and About entry points.
