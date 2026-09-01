@@ -27,6 +27,14 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
+private val XP_TRAY_BRUSH = Brush.verticalGradient(
+    listOf(
+        Color(0xFF36B9F3),
+        Color(0xFF1696DF),
+        Color(0xFF0B79CB)
+    )
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun XpNotificationTray(context: Context) {
@@ -53,99 +61,107 @@ fun XpNotificationTray(context: Context) {
     }
 
     Row(
-        Modifier
-            .fillMaxHeight()
-            // The tray owns its entire visible area so taps never fall through into
-            // Android app task buttons while it is expanded over the taskbar.
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF36B9F3),
-                        Color(0xFF1696DF),
-                        Color(0xFF0B79CB)
-                    )
-                )
-            )
-            .padding(end = 3.dp),
+        Modifier.fillMaxHeight(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End
     ) {
-        // Thin dark seam between the normal XP taskbar and the cyan notification area.
-        // The chevron is intentionally centered on this seam so roughly half of the
-        // button sits over each color, matching the original XP tray treatment.
-        Box(
-            Modifier
-                .fillMaxHeight()
-                .width(1.dp)
-                .background(Color(0xFF111111))
-        )
-
-        if (!accessGranted) {
-            Text(
-                "Notifications",
-                color = Color.White,
-                fontSize = 9.sp,
-                modifier = Modifier
+        if (hasOverflow && accessGranted) {
+            // Full-size clickable chevron cell. The left half stays transparent so the
+            // normal dark-blue taskbar shows through; only the right half is cyan.
+            // This preserves the XP "button straddling the seam" look without leaving
+            // the overhanging half vulnerable to click-through.
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .width(29.dp)
                     .combinedClickable(
-                        onClick = { openNotificationAccess(context) },
+                        onClick = { expanded = !expanded },
                         onLongClick = { }
-                    )
-                    .padding(horizontal = 6.dp, vertical = 8.dp)
-            )
-        } else {
-            if (hasOverflow) {
-                // Reserve only the right half of the chevron inside the cyan tray.
-                // The image itself is shifted left so its center rides directly on the
-                // black seam; when the tray grows leftward this whole boundary moves too.
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 Box(
                     Modifier
-                        .width(15.dp)
+                        .align(Alignment.CenterEnd)
                         .fillMaxHeight()
-                        .combinedClickable(
-                            onClick = { expanded = !expanded },
-                            onLongClick = { }
-                        ),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    if (chevron != null) {
-                        Image(
-                            bitmap = chevron,
-                            contentDescription = if (expanded) "Hide notification icons" else "Show notification icons",
-                            modifier = Modifier
-                                .offset(x = (-14).dp)
-                                .size(28.dp)
-                                .rotate(if (expanded) 180f else 0f),
-                            contentScale = ContentScale.Fit
-                        )
-                    } else {
-                        Text(
-                            if (expanded) "▶" else "◀",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.offset(x = (-5).dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(1.dp))
-            }
-
-            shownPackages.forEach { pkg ->
-                TrayNotificationIcon(
-                    context = context,
-                    packageName = pkg,
-                    onRemove = {
-                        val updated = hiddenPackages + pkg
-                        hiddenPackages = updated
-                        prefs.edit().putStringSet("hidden_tray_packages", updated).apply()
-                    }
+                        .width(15.dp)
+                        .background(XP_TRAY_BRUSH)
                 )
-                Spacer(Modifier.width(2.dp))
+                Box(
+                    Modifier
+                        .align(Alignment.Center)
+                        .fillMaxHeight()
+                        .width(1.dp)
+                        .background(Color(0xFF111111))
+                )
+                if (chevron != null) {
+                    Image(
+                        bitmap = chevron,
+                        contentDescription = if (expanded) "Hide notification icons" else "Show notification icons",
+                        modifier = Modifier
+                            .size(28.dp)
+                            .rotate(if (expanded) 180f else 0f),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Text(
+                        if (expanded) "▶" else "◀",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
+        } else {
+            // With no chevron, the dark seam itself marks the boundary.
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .width(1.dp)
+                    .background(Color(0xFF111111))
+            )
         }
 
-        Spacer(Modifier.width(3.dp))
-        XpTrayClock()
+        Row(
+            Modifier
+                .fillMaxHeight()
+                // This cyan section owns its whole layout area, including when the tray
+                // expands leftward and takes space away from Android task buttons.
+                .background(XP_TRAY_BRUSH)
+                .padding(end = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End
+        ) {
+            if (!accessGranted) {
+                Text(
+                    "Notifications",
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    modifier = Modifier
+                        .combinedClickable(
+                            onClick = { openNotificationAccess(context) },
+                            onLongClick = { }
+                        )
+                        .padding(horizontal = 6.dp, vertical = 8.dp)
+                )
+            } else {
+                shownPackages.forEach { pkg ->
+                    TrayNotificationIcon(
+                        context = context,
+                        packageName = pkg,
+                        onRemove = {
+                            val updated = hiddenPackages + pkg
+                            hiddenPackages = updated
+                            prefs.edit().putStringSet("hidden_tray_packages", updated).apply()
+                        }
+                    )
+                    Spacer(Modifier.width(2.dp))
+                }
+            }
+
+            Spacer(Modifier.width(3.dp))
+            XpTrayClock()
+        }
     }
 }
 
