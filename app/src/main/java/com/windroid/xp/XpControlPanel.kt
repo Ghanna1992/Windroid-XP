@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -51,25 +52,34 @@ fun XpControlPanel(
             ExplorerToolbarRow()
             AddressRow()
 
-            Row(Modifier.weight(1f).fillMaxWidth()) {
-                ControlPanelSidebar(
-                    classicView = classicView,
-                    onToggleClassic = { classicView = !classicView },
-                    onWindowsUpdate = onWindowsUpdate,
-                    onAbout = onAbout,
-                    onRestoreDefaults = onRestoreDefaults
-                )
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val sidebarWidth = when {
+                    maxWidth < 420.dp -> 118.dp
+                    maxWidth < 700.dp -> 145.dp
+                    else -> 185.dp
+                }
 
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .background(Color(0xFF6375D6))
-                ) {
-                    if (classicView) {
-                        ClassicControlPanel(context, onAppearance, onUserAccounts, onWindowsUpdate, onAbout)
-                    } else {
-                        CategoryControlPanel(context, onAppearance, onUserAccounts)
+                Row(Modifier.fillMaxSize()) {
+                    ControlPanelSidebar(
+                        width = sidebarWidth,
+                        classicView = classicView,
+                        onToggleClassic = { classicView = !classicView },
+                        onWindowsUpdate = onWindowsUpdate,
+                        onAbout = onAbout,
+                        onRestoreDefaults = onRestoreDefaults
+                    )
+
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(Color(0xFF6375D6))
+                    ) {
+                        if (classicView) {
+                            ClassicControlPanel(context, onAppearance, onUserAccounts, onWindowsUpdate, onAbout)
+                        } else {
+                            CategoryControlPanel(context, onAppearance, onUserAccounts)
+                        }
                     }
                 }
             }
@@ -80,11 +90,11 @@ fun XpControlPanel(
 @Composable
 private fun ExplorerMenuRow() {
     Row(
-        Modifier.fillMaxWidth().height(28.dp).background(Color(0xFFF4F1E8)).padding(horizontal = 10.dp),
+        Modifier.fillMaxWidth().height(28.dp).background(Color(0xFFF4F1E8)).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         listOf("File", "Edit", "View", "Favorites", "Tools", "Help").forEach { label ->
-            Text(label, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
+            Text(label, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp))
         }
     }
 }
@@ -92,17 +102,17 @@ private fun ExplorerMenuRow() {
 @Composable
 private fun ExplorerToolbarRow() {
     Row(
-        Modifier.fillMaxWidth().height(46.dp).background(Color(0xFFF1EEE4)).border(1.dp, Color(0xFFD0CCBF)).padding(horizontal = 10.dp),
+        Modifier.fillMaxWidth().height(46.dp).background(Color(0xFFF1EEE4)).border(1.dp, Color(0xFFD0CCBF)).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("◀", color = Color(0xFFAAAAAA), fontSize = 22.sp)
-        Spacer(Modifier.width(18.dp))
+        Spacer(Modifier.width(14.dp))
         Text("➜", color = Color(0xFF36A535), fontSize = 24.sp)
-        Spacer(Modifier.width(20.dp))
+        Spacer(Modifier.width(16.dp))
         Text("🔍 Search", fontSize = 11.sp)
-        Spacer(Modifier.width(20.dp))
+        Spacer(Modifier.width(16.dp))
         Text("📁 Folders", fontSize = 11.sp)
-        Spacer(Modifier.width(20.dp))
+        Spacer(Modifier.width(16.dp))
         Text("▦", fontSize = 19.sp)
     }
 }
@@ -132,50 +142,52 @@ private fun AddressRow() {
 
 @Composable
 private fun ControlPanelSidebar(
+    width: Dp,
     classicView: Boolean,
     onToggleClassic: () -> Unit,
     onWindowsUpdate: () -> Unit,
     onAbout: () -> Unit,
     onRestoreDefaults: () -> Unit
 ) {
+    val compact = width <= 120.dp
     Column(
-        Modifier.width(185.dp).fillMaxHeight().background(Color(0xFF6F94DD)).padding(10.dp)
+        Modifier.width(width).fillMaxHeight().background(Color(0xFF6F94DD)).padding(if (compact) 6.dp else 9.dp)
     ) {
-        SidebarCard("Control Panel") {
-            SidebarLink(if (classicView) "Switch to Category View" else "Switch to Classic View", onToggleClassic)
+        SidebarCard("Control Panel", compact) {
+            SidebarLink(if (classicView) "Switch to Category View" else "Switch to Classic View", onToggleClassic, compact)
         }
-        Spacer(Modifier.height(12.dp))
-        SidebarCard("See Also") {
-            SidebarLink("Windows Update", onWindowsUpdate)
-            SidebarLink("About Windroid XP", onAbout)
-            SidebarLink("Help and Support", onAbout)
-            SidebarLink("Restore Windroid Defaults", onRestoreDefaults)
+        Spacer(Modifier.height(if (compact) 8.dp else 10.dp))
+        SidebarCard("See Also", compact) {
+            SidebarLink("Windows Update", onWindowsUpdate, compact)
+            SidebarLink("About Windroid XP", onAbout, compact)
+            SidebarLink("Help and Support", onAbout, compact)
+            SidebarLink("Restore Windroid Defaults", onRestoreDefaults, compact)
         }
     }
 }
 
 @Composable
-private fun SidebarCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun SidebarCard(title: String, compact: Boolean, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth().background(Color(0xFFF5F7FD)).border(1.dp, Color(0xFF8DA7D8))) {
         Row(
-            Modifier.fillMaxWidth().background(Color(0xFF2E69C7)).padding(horizontal = 9.dp, vertical = 7.dp),
+            Modifier.fillMaxWidth().background(Color(0xFF2E69C7)).padding(horizontal = if (compact) 6.dp else 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = if (compact) 10.sp else 11.sp)
             Spacer(Modifier.weight(1f))
-            Text("⌃", color = Color.White, fontSize = 12.sp)
+            Text("⌃", color = Color.White, fontSize = 11.sp)
         }
-        Column(Modifier.padding(9.dp), content = content)
+        Column(Modifier.padding(horizontal = if (compact) 6.dp else 8.dp, vertical = 6.dp), content = content)
     }
 }
 
 @Composable
-private fun SidebarLink(label: String, onClick: () -> Unit) {
+private fun SidebarLink(label: String, onClick: () -> Unit, compact: Boolean) {
     Text(
         label,
         color = Color(0xFF2456A5),
-        fontSize = 10.sp,
-        modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 5.dp)
+        fontSize = if (compact) 8.5.sp else 10.sp,
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = if (compact) 4.dp else 5.dp)
     )
 }
 
@@ -185,42 +197,69 @@ private fun CategoryControlPanel(
     onAppearance: () -> Unit,
     onUserAccounts: () -> Unit
 ) {
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 26.dp, top = 20.dp, end = 22.dp, bottom = 20.dp)
-    ) {
-        Text("Pick a category", color = Color(0xFFD9E3FF), fontSize = 31.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(18.dp))
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact = maxWidth < 470.dp
+        val paddingX = if (compact) 14.dp else 24.dp
+        val iconSize = if (compact) 44 else 55
+        val titleSize = if (compact) 23.sp else 31.sp
 
-        Row(Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                CategoryItem(context, "Appearance.png", "Appearance and Themes", onAppearance)
-                CategoryItem(context, "Network Connections.png", "Network and Internet Connections") {
-                    context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                }
-                CategoryItem(context, "Add or Remove Programs.png", "Add or Remove Programs") {
-                    context.startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS))
-                }
-                CategoryItem(context, "Sounds and Audio Devices.png", "Sounds, Speech, and Audio Devices") {
-                    context.startActivity(Intent(Settings.ACTION_SOUND_SETTINGS))
-                }
-                CategoryItem(context, "Performance and Maintenance.png", "Performance and Maintenance") {
-                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
-                }
-            }
-            Spacer(Modifier.width(18.dp))
-            Column(Modifier.weight(1f)) {
-                CategoryItem(context, "Printers and Faxes.png", "Printers and Other Hardware") {
-                    context.startActivity(Intent(Settings.ACTION_PRINT_SETTINGS))
-                }
-                CategoryItem(context, "User Accounts.png", "User Accounts", onUserAccounts)
-                CategoryItem(context, "Date and Time.png", "Date, Time, Language, and Regional Options") {
-                    context.startActivity(Intent(Settings.ACTION_DATE_SETTINGS))
-                }
-                CategoryItem(context, "Accessibility.png", "Accessibility Options") {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = paddingX, top = 16.dp, end = paddingX, bottom = 18.dp)
+        ) {
+            Text("Pick a category", color = Color(0xFFD9E3FF), fontSize = titleSize, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(if (compact) 10.dp else 16.dp))
+
+            if (compact) {
+                CategoryColumn(context, onAppearance, onUserAccounts, iconSize, includeRightColumn = true)
+            } else {
+                Row(Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        CategoryLeftItems(context, onAppearance, iconSize)
+                    }
+                    Spacer(Modifier.width(18.dp))
+                    Column(Modifier.weight(1f)) {
+                        CategoryRightItems(context, onUserAccounts, iconSize)
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CategoryColumn(context: Context, onAppearance: () -> Unit, onUserAccounts: () -> Unit, iconSize: Int, includeRightColumn: Boolean) {
+    CategoryLeftItems(context, onAppearance, iconSize)
+    if (includeRightColumn) CategoryRightItems(context, onUserAccounts, iconSize)
+}
+
+@Composable
+private fun CategoryLeftItems(context: Context, onAppearance: () -> Unit, iconSize: Int) {
+    CategoryItem(context, "Appearance.png", "Appearance and Themes", iconSize, onAppearance)
+    CategoryItem(context, "Network Connections.png", "Network and Internet Connections", iconSize) {
+        context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+    }
+    CategoryItem(context, "Add or Remove Programs.png", "Add or Remove Programs", iconSize) {
+        context.startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS))
+    }
+    CategoryItem(context, "Sounds and Audio Devices.png", "Sounds, Speech, and Audio Devices", iconSize) {
+        context.startActivity(Intent(Settings.ACTION_SOUND_SETTINGS))
+    }
+    CategoryItem(context, "Performance and Maintenance.png", "Performance and Maintenance", iconSize) {
+        context.startActivity(Intent(Settings.ACTION_SETTINGS))
+    }
+}
+
+@Composable
+private fun CategoryRightItems(context: Context, onUserAccounts: () -> Unit, iconSize: Int) {
+    CategoryItem(context, "Printers and Faxes.png", "Printers and Other Hardware", iconSize) {
+        context.startActivity(Intent(Settings.ACTION_PRINT_SETTINGS))
+    }
+    CategoryItem(context, "User Accounts.png", "User Accounts", iconSize, onUserAccounts)
+    CategoryItem(context, "Date and Time.png", "Date, Time, Language, and Regional Options", iconSize) {
+        context.startActivity(Intent(Settings.ACTION_DATE_SETTINGS))
+    }
+    CategoryItem(context, "Accessibility.png", "Accessibility Options", iconSize) {
+        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 }
 
@@ -254,14 +293,14 @@ private fun ClassicControlPanel(
 }
 
 @Composable
-private fun CategoryItem(context: Context, iconName: String, label: String, onClick: () -> Unit) {
+private fun CategoryItem(context: Context, iconName: String, label: String, iconSize: Int, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = if (iconSize <= 44) 7.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        XpControlIcon(context, iconName, 55)
-        Spacer(Modifier.width(10.dp))
-        Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        XpControlIcon(context, iconName, iconSize)
+        Spacer(Modifier.width(if (iconSize <= 44) 8.dp else 10.dp))
+        Text(label, color = Color.White, fontSize = if (iconSize <= 44) 10.5.sp else 12.sp, fontWeight = FontWeight.Bold)
     }
 }
 
