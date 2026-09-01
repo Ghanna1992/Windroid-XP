@@ -238,13 +238,13 @@ private fun CategoryLeftItems(context: Context, onAppearance: () -> Unit, iconSi
     CategoryItem(context, "Network Connections.png", "Network and Internet Connections", iconSize) {
         context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
     }
-    CategoryItem(context, "Add or Remove Programs.png", "Add or Remove Programs", iconSize) {
+    CategoryItem(context, "Change or Remove Programs.png", "Add or Remove Programs", iconSize) {
         context.startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS))
     }
-    CategoryItem(context, "Sounds and Audio Devices.png", "Sounds, Speech, and Audio Devices", iconSize) {
+    CategoryItem(context, "Audio Devices.png", "Sounds, Speech, and Audio Devices", iconSize) {
         context.startActivity(Intent(Settings.ACTION_SOUND_SETTINGS))
     }
-    CategoryItem(context, "Performance and Maintenance.png", "Performance and Maintenance", iconSize) {
+    CategoryItem(context, "Whistler - Performance.png", "Performance and Maintenance", iconSize) {
         context.startActivity(Intent(Settings.ACTION_SETTINGS))
     }
 }
@@ -276,11 +276,11 @@ private fun ClassicControlPanel(
         Spacer(Modifier.height(12.dp))
         val items = listOf(
             Triple("Appearance.png", "Appearance and Themes", onAppearance),
-            Triple("Add or Remove Programs.png", "Add or Remove Programs") { context.startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS)) },
+            Triple("Change or Remove Programs.png", "Add or Remove Programs") { context.startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS)) },
             Triple("Network Connections.png", "Network Connections") { context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) },
             Triple("User Accounts.png", "User Accounts", onUserAccounts),
             Triple("Windows Update.png", "Windows Update", onWindowsUpdate),
-            Triple("My Computer.png", "About Windroid XP", onAbout)
+            Triple("Windroid logo.png", "About Windroid XP", onAbout)
         )
         items.forEach { (icon, label, action) ->
             Row(Modifier.fillMaxWidth().clickable { action() }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
