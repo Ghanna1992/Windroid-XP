@@ -37,10 +37,11 @@ android {
             def keystorePath = System.getenv('WINDROID_KEYSTORE_PATH')
             if (keystorePath != null && !keystorePath.trim().isEmpty()) {
                 def signingPassword = System.getenv('WINDROID_KEYSTORE_PASSWORD')
+                def keyPasswordValue = System.getenv('WINDROID_KEY_PASSWORD') ?: signingPassword
                 storeFile = file(keystorePath)
                 storePassword = signingPassword
                 keyAlias = System.getenv('WINDROID_KEY_ALIAS')
-                keyPassword = signingPassword
+                keyPassword = keyPasswordValue
             }
         }
     }
