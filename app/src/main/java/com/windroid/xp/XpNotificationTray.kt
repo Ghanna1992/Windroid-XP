@@ -4,14 +4,16 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.provider.Settings
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -25,14 +27,22 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun XpNotificationTray(context: Context) {
+    val prefs = remember { context.getSharedPreferences("windroid_prefs", Context.MODE_PRIVATE) }
     var expanded by remember { mutableStateOf(false) }
     var accessGranted by remember { mutableStateOf(notificationAccessGranted(context)) }
+    var hiddenPackages by remember {
+        mutableStateOf(prefs.getStringSet("hidden_tray_packages", emptySet())?.toSet() ?: emptySet())
+    }
     val packages by WindroidNotificationListener.packages.collectAsState()
-    val visible = packages.take(2)
-    val overflow = packages.drop(2).take(8)
+    val activePackages = packages.filterNot { it in hiddenPackages }
+    val hasOverflow = activePackages.size > 2
+    val shownPackages = if (expanded && hasOverflow) activePackages.take(10) else activePackages.take(2)
     val chevron = remember { loadTrayAsset(context, "chevron.png") }
+
+    if (!hasOverflow && expanded) expanded = false
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -45,66 +55,94 @@ fun XpNotificationTray(context: Context) {
     Row(
         Modifier
             .fillMaxHeight()
+            // This solid background is deliberate: while expanded the tray itself owns
+            // the touchable space, preventing taps from reaching taskbar buttons beneath it.
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF2EA7F0), Color(0xFF1686D8), Color(0xFF0A6EC2))
+                    listOf(
+                        Color(0xFF36B9F3),
+                        Color(0xFF1696DF),
+                        Color(0xFF0B79CB)
+                    )
                 )
             )
-            .padding(horizontal = 3.dp),
+            .padding(end = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End
     ) {
-        if (expanded) {
-            if (!accessGranted) {
-                Text(
-                    "Enable notification icons",
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    modifier = Modifier
-                        .clickable { openNotificationAccess(context) }
-                        .padding(horizontal = 6.dp, vertical = 8.dp)
-                )
-            } else {
-                overflow.forEach { pkg ->
-                    TrayNotificationIcon(context, pkg)
-                    Spacer(Modifier.width(2.dp))
+        if (!accessGranted) {
+            Text(
+                "Notifications",
+                color = Color.White,
+                fontSize = 9.sp,
+                modifier = Modifier
+                    .combinedClickable(
+                        onClick = { openNotificationAccess(context) },
+                        onLongClick = { }
+                    )
+                    .padding(horizontal = 6.dp, vertical = 8.dp)
+            )
+        } else {
+            // The chevron is the moving LEFT EDGE of the XP tray. It only exists when
+            // there are hidden icons. Expanding grows the cyan area leftward and the
+            // chevron rides that leading edge with it.
+            if (hasOverflow) {
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .combinedClickable(
+                            onClick = { expanded = !expanded },
+                            onLongClick = { }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (chevron != null) {
+                        Image(
+                            bitmap = chevron,
+                            contentDescription = if (expanded) "Hide notification icons" else "Show notification icons",
+                            modifier = Modifier
+                                .size(28.dp)
+                                .rotate(if (expanded) 180f else 0f),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Text(
+                            if (expanded) "▶" else "◀",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
+                Spacer(Modifier.width(1.dp))
             }
-        }
 
-        Box(
-            Modifier
-                .size(29.dp)
-                .clickable {
-                    if (!accessGranted) openNotificationAccess(context) else expanded = !expanded
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            if (chevron != null) {
-                Image(
-                    bitmap = chevron,
-                    contentDescription = if (expanded) "Hide notification icons" else "Show notification icons",
-                    modifier = Modifier.size(27.dp),
-                    contentScale = ContentScale.Fit
+            shownPackages.forEach { pkg ->
+                TrayNotificationIcon(
+                    context = context,
+                    packageName = pkg,
+                    onRemove = {
+                        val updated = hiddenPackages + pkg
+                        hiddenPackages = updated
+                        prefs.edit().putStringSet("hidden_tray_packages", updated).apply()
+                    }
                 )
-            } else {
-                Text(if (expanded) "▶" else "◀", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(2.dp))
             }
         }
 
-        visible.forEach { pkg ->
-            Spacer(Modifier.width(2.dp))
-            TrayNotificationIcon(context, pkg)
-        }
-
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(3.dp))
         XpTrayClock()
-        Spacer(Modifier.width(2.dp))
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TrayNotificationIcon(context: Context, packageName: String) {
+private fun TrayNotificationIcon(
+    context: Context,
+    packageName: String,
+    onRemove: () -> Unit
+) {
     val icon = remember(packageName) {
         try {
             context.packageManager.getApplicationIcon(packageName).toBitmap(64, 64).asImageBitmap()
@@ -124,16 +162,24 @@ private fun TrayNotificationIcon(context: Context, packageName: String) {
     Box(
         Modifier
             .size(28.dp)
-            .clickable {
-                context.packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
-                    intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                }
-            },
+            .combinedClickable(
+                onClick = {
+                    context.packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
+                        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                    }
+                },
+                onLongClick = onRemove
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (icon != null) {
-            Image(bitmap = icon, contentDescription = label, modifier = Modifier.size(22.dp), contentScale = ContentScale.Fit)
+            Image(
+                bitmap = icon,
+                contentDescription = label,
+                modifier = Modifier.size(22.dp),
+                contentScale = ContentScale.Fit
+            )
         } else {
             Text("●", color = Color.White, fontSize = 14.sp)
         }
@@ -150,7 +196,7 @@ private fun XpTrayClock() {
         }
     }
     val text = remember(now) { SimpleDateFormat("h:mm a", Locale.getDefault()).format(now) }
-    Text(text, color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 3.dp))
+    Text(text, color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 4.dp))
 }
 
 private fun openNotificationAccess(context: Context) {
