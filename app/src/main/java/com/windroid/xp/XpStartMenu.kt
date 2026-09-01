@@ -245,7 +245,7 @@ fun XpStartMenu(
 }
 
 private fun openDocumentPicker(context: Context, mime: String) { try { context.startActivity(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = mime }) } catch (_: Exception) { context.startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)) } }
-private fun startAsset(context: Context, fileName: String): ImageBitmap? = try { context.assets.open("icons/xp/$fileName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() } } catch (_: Exception) { null }
+private fun startAsset(context: Context, fileName: String): ImageBitmap? = loadAssetImage(context, "icons", "xp/$fileName")
 
 @Composable private fun XpSystemMenuRow(context: Context, iconFile: String, label: String, bold: Boolean = false, arrow: Boolean = false, onClick: () -> Unit) {
     val icon = remember(iconFile) { startAsset(context, iconFile) }
