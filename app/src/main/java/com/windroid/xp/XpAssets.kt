@@ -5,7 +5,11 @@ import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 
+private val assetListCache = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+
 internal fun listAssetImages(context: Context, folder: String): List<String> {
+    assetListCache[folder]?.let { return it }
+
     val allowed = setOf("png", "jpg", "jpeg", "webp")
     val results = mutableListOf<String>()
     fun scan(assetFolder: String, relativePrefix: String = "") {
@@ -32,7 +36,14 @@ internal fun listAssetImages(context: Context, folder: String): List<String> {
             }
         }
     }
-    return try { scan(folder); results.sortedBy { it.substringAfter("::", it).lowercase() } } catch (_: Exception) { emptyList() }
+
+    val scanned = try {
+        scan(folder)
+        results.sortedBy { it.substringAfter("::", it).lowercase() }
+    } catch (_: Exception) {
+        emptyList()
+    }
+    return assetListCache.putIfAbsent(folder, scanned) ?: scanned
 }
 
 private val assetImageCache = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap?>()
