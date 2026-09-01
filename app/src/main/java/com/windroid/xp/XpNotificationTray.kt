@@ -55,8 +55,8 @@ fun XpNotificationTray(context: Context) {
     Row(
         Modifier
             .fillMaxHeight()
-            // This solid background is deliberate: while expanded the tray itself owns
-            // the touchable space, preventing taps from reaching taskbar buttons beneath it.
+            // The tray owns its entire visible area so taps never fall through into
+            // Android app task buttons while it is expanded over the taskbar.
             .background(
                 Brush.verticalGradient(
                     listOf(
@@ -70,6 +70,16 @@ fun XpNotificationTray(context: Context) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End
     ) {
+        // Thin dark seam between the normal XP taskbar and the cyan notification area.
+        // The chevron is intentionally centered on this seam so roughly half of the
+        // button sits over each color, matching the original XP tray treatment.
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .width(1.dp)
+                .background(Color(0xFF111111))
+        )
+
         if (!accessGranted) {
             Text(
                 "Notifications",
@@ -83,24 +93,26 @@ fun XpNotificationTray(context: Context) {
                     .padding(horizontal = 6.dp, vertical = 8.dp)
             )
         } else {
-            // The chevron is the moving LEFT EDGE of the XP tray. It only exists when
-            // there are hidden icons. Expanding grows the cyan area leftward and the
-            // chevron rides that leading edge with it.
             if (hasOverflow) {
+                // Reserve only the right half of the chevron inside the cyan tray.
+                // The image itself is shifted left so its center rides directly on the
+                // black seam; when the tray grows leftward this whole boundary moves too.
                 Box(
                     Modifier
-                        .size(30.dp)
+                        .width(15.dp)
+                        .fillMaxHeight()
                         .combinedClickable(
                             onClick = { expanded = !expanded },
                             onLongClick = { }
                         ),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.CenterStart
                 ) {
                     if (chevron != null) {
                         Image(
                             bitmap = chevron,
                             contentDescription = if (expanded) "Hide notification icons" else "Show notification icons",
                             modifier = Modifier
+                                .offset(x = (-14).dp)
                                 .size(28.dp)
                                 .rotate(if (expanded) 180f else 0f),
                             contentScale = ContentScale.Fit
@@ -110,7 +122,8 @@ fun XpNotificationTray(context: Context) {
                             if (expanded) "▶" else "◀",
                             color = Color.White,
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.offset(x = (-5).dp)
                         )
                     }
                 }
