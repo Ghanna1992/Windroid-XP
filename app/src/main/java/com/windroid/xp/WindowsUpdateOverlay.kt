@@ -30,9 +30,20 @@ fun WindowsUpdateOverlay(
     var downloaded by remember { mutableStateOf<java.io.File?>(null) }
     var history by remember { mutableStateOf<List<UpdateManager.UpdateHistoryItem>>(emptyList()) }
     var historyLoading by remember { mutableStateOf(true) }
+    var updateBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    fun rejectDuplicateUpdate(): Boolean {
+        if (!updateBusy) return false
+        status = "Windows Update is already in progress. Please wait for the current update to finish."
+        return true
+    }
+
     fun check() {
+        if (updateBusy) {
+            status = "Windows Update is already in progress. Please wait for the current update to finish."
+            return
+        }
         progress = -1
         downloaded = null
         status = "Checking for updates..."
@@ -84,19 +95,27 @@ fun WindowsUpdateOverlay(
             history = history,
             historyLoading = historyLoading,
             automaticChecks = automaticChecks,
+            updateBusy = updateBusy,
             onAutomaticChecksChanged = { enabled ->
-                automaticChecks = enabled
-                prefs.edit().putBoolean(AUTO_UPDATE_CHECKS, enabled).apply()
-                if (enabled) check() else status = "Automatic update checks are turned off. You can still check manually at any time."
+                if (updateBusy) {
+                    status = "Windows Update is already in progress. Please wait for the current update to finish."
+                } else {
+                    automaticChecks = enabled
+                    prefs.edit().putBoolean(AUTO_UPDATE_CHECKS, enabled).apply()
+                    if (enabled) check() else status = "Automatic update checks are turned off. You can still check manually at any time."
+                }
             },
-            onCheckAgain = { check(); loadHistory() },
+            onCheckAgain = { check(); if (!updateBusy) loadHistory() },
             onDownloadAndInstall = {
+                if (rejectDuplicateUpdate()) return@WindowsUpdatePage
                 val found = updateInfo ?: return@WindowsUpdatePage
+                updateBusy = true
                 progress = 0
                 status = "Downloading update..."
                 scope.launch {
                     val file = UpdateManager.downloadUpdate(context, found) { value -> progress = value }
                     if (file == null) {
+                        updateBusy = false
                         progress = -1
                         status = "The update could not be downloaded. Try again later."
                     } else {
@@ -104,14 +123,23 @@ fun WindowsUpdateOverlay(
                         progress = 100
                         status = "Download complete. Opening the Android installer..."
                         val opened = UpdateManager.installUpdate(context, file)
-                        if (!opened) status = "Allow installs from Windroid XP, then return and tap Install update."
+                        if (!opened) {
+                            updateBusy = false
+                            status = "Allow installs from Windroid XP, then return and tap Install update."
+                        }
                     }
                 }
             },
             onInstall = {
+                if (rejectDuplicateUpdate()) return@WindowsUpdatePage
                 downloaded?.let { file ->
+                    updateBusy = true
+                    status = "Opening the Android installer..."
                     val opened = UpdateManager.installUpdate(context, file)
-                    if (!opened) status = "Allow installs from Windroid XP, then return and tap Install update again."
+                    if (!opened) {
+                        updateBusy = false
+                        status = "Allow installs from Windroid XP, then return and tap Install update again."
+                    }
                 }
             },
             onClose = onClose
