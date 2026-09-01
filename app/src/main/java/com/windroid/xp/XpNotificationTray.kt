@@ -66,14 +66,12 @@ fun XpNotificationTray(context: Context) {
         horizontalArrangement = Arrangement.End
     ) {
         if (hasOverflow && accessGranted) {
-            // Full-size clickable chevron cell. The left half stays transparent so the
-            // normal dark-blue taskbar shows through; only the right half is cyan.
-            // This preserves the XP "button straddling the seam" look without leaving
-            // the overhanging half vulnerable to click-through.
+            // The chevron is the moving boundary itself. Keep it large and center the
+            // button exactly on the dark-blue/cyan dividing line so half sits on each side.
             Box(
                 Modifier
                     .fillMaxHeight()
-                    .width(29.dp)
+                    .width(40.dp)
                     .combinedClickable(
                         onClick = { expanded = !expanded },
                         onLongClick = { }
@@ -84,7 +82,7 @@ fun XpNotificationTray(context: Context) {
                     Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
-                        .width(15.dp)
+                        .width(20.dp)
                         .background(XP_TRAY_BRUSH)
                 )
                 Box(
@@ -99,7 +97,7 @@ fun XpNotificationTray(context: Context) {
                         bitmap = chevron,
                         contentDescription = if (expanded) "Hide notification icons" else "Show notification icons",
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(39.dp)
                             .rotate(if (expanded) 180f else 0f),
                         contentScale = ContentScale.Fit
                     )
@@ -107,13 +105,12 @@ fun XpNotificationTray(context: Context) {
                     Text(
                         if (expanded) "▶" else "◀",
                         color = Color.White,
-                        fontSize = 14.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
         } else {
-            // With no chevron, the dark seam itself marks the boundary.
             Box(
                 Modifier
                     .fillMaxHeight()
@@ -125,8 +122,6 @@ fun XpNotificationTray(context: Context) {
         Row(
             Modifier
                 .fillMaxHeight()
-                // This cyan section owns its whole layout area, including when the tray
-                // expands leftward and takes space away from Android task buttons.
                 .background(XP_TRAY_BRUSH)
                 .padding(end = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
