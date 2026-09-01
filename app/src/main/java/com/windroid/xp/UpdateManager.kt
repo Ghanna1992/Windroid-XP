@@ -213,6 +213,13 @@ object UpdateManager {
                     }
                 }
             }
+
+            val downloadedBytes = apk.length()
+            if (downloadedBytes <= 0L || (totalBytes > 0L && downloadedBytes != totalBytes)) {
+                apk.delete()
+                return@withContext null
+            }
+
             onProgress(100)
             apk
         } catch (_: Exception) {
