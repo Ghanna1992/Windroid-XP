@@ -41,3 +41,5 @@ import androidx.compose.ui.unit.sp
 '''
 Path('app/src/main/java/com/windroid/xp/XpAppearance.kt').write_text(imports + block)
 src.write_text(text[:start] + text[end:])
+
+# One-shot extraction: compile gate must pass before source changes are committed.
