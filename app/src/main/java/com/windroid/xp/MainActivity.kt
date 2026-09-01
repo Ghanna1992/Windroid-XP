@@ -226,7 +226,7 @@ private fun loadStartButtonImage(context: Context): ImageBitmap? {
             val max = maxOf(r, g, b)
             val min = minOf(r, g, b)
             val average = (r + g + b) / 3
-            return a == 0 || (max - min <= 30 && average >= 135)
+            return a == 0 || (max - min <= 30 && (average >= 135 || average <= 45))
         }
         val seen = BooleanArray(width * height)
         val queue = java.util.ArrayDeque<Int>()
