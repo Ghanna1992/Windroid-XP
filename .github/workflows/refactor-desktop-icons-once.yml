@@ -1,0 +1,72 @@
+name: Refactor desktop icons once
+
+on:
+  push:
+    branches:
+      - refactor/main-split-desktop-icons
+    paths:
+      - '.github/workflows/refactor-desktop-icons-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  extract-desktop-icons:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout refactor branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract desktop icon rendering and dragging
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main_path = Path('app/src/main/java/com/windroid/xp/MainActivity.kt')
+          out_path = Path('app/src/main/java/com/windroid/xp/XpDesktopIcons.kt')
+          text = main_path.read_text()
+
+          start_marker = '@Composable\nprivate fun MovableDesktopItem('
+          end_marker = '@Composable private fun AppearanceWindow('
+          start = text.index(start_marker)
+          end = text.index(end_marker)
+          block = text[start:end].rstrip() + '\n'
+
+          block = block.replace('@Composable\nprivate fun MovableDesktopItem', '@Composable\ninternal fun MovableDesktopItem', 1)
+          block = block.replace('@Composable private fun WallpaperLayer', '@Composable internal fun WallpaperLayer', 1)
+          block = block.replace('@Composable private fun XPWallpaper', '@Composable internal fun XPWallpaper', 1)
+          block = block.replace('@Composable private fun DesktopSystemShortcut', '@Composable internal fun DesktopSystemShortcut', 1)
+          block = block.replace('@Composable private fun DesktopAppIcon', '@Composable internal fun DesktopAppIcon', 1)
+
+          header = '''package com.windroid.xp\n\nimport android.content.Context\nimport androidx.compose.foundation.Canvas\nimport androidx.compose.foundation.ExperimentalFoundationApi\nimport androidx.compose.foundation.Image\nimport androidx.compose.foundation.background\nimport androidx.compose.foundation.border\nimport androidx.compose.foundation.clickable\nimport androidx.compose.foundation.combinedClickable\nimport androidx.compose.foundation.gestures.awaitEachGesture\nimport androidx.compose.foundation.gestures.awaitFirstDown\nimport androidx.compose.foundation.layout.*\nimport androidx.compose.material3.Text\nimport androidx.compose.runtime.*\nimport androidx.compose.ui.Alignment\nimport androidx.compose.ui.Modifier\nimport androidx.compose.ui.draw.shadow\nimport androidx.compose.ui.geometry.Offset\nimport androidx.compose.ui.graphics.Brush\nimport androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.graphics.Path\nimport androidx.compose.ui.input.pointer.PointerEventPass\nimport androidx.compose.ui.input.pointer.pointerInput\nimport androidx.compose.ui.layout.ContentScale\nimport androidx.compose.ui.platform.LocalDensity\nimport androidx.compose.ui.text.font.FontWeight\nimport androidx.compose.ui.text.style.TextOverflow\nimport androidx.compose.ui.unit.IntOffset\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.unit.sp\nimport androidx.compose.ui.zIndex\nimport kotlin.math.roundToInt\n\n'''
+          out_path.write_text(header + block)
+          updated = text[:start] + text[end:]
+          updated = updated.replace('@Composable private fun ContextMenuRow(', '@Composable internal fun ContextMenuRow(', 1)
+          main_path.write_text(updated)
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile Dev debug
+        run: gradle assembleDevDebug
+
+      - name: Commit only after successful compile
+        shell: bash
+        run: |
+          git config user.name 'Ghanna1992'
+          git config user.email 'geradhanna@gmail.com'
+          git add app/src/main/java/com/windroid/xp/MainActivity.kt app/src/main/java/com/windroid/xp/XpDesktopIcons.kt
+          git commit -m 'Extract desktop icon rendering from MainActivity'
+          git push origin HEAD:refactor/main-split-desktop-icons
