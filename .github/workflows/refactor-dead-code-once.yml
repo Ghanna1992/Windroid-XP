@@ -1,0 +1,72 @@
+name: Refactor legacy UI cleanup once
+
+on:
+  push:
+    branches:
+      - refactor/main-split-dead-code
+    paths:
+      - '.github/workflows/refactor-dead-code-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  remove-dead-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout refactor branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove superseded Start menu and tray helpers
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/windroid/xp/MainActivity.kt')
+          text = path.read_text()
+
+          def remove_between(source, start_marker, end_marker):
+              start = source.index(start_marker)
+              end = source.index(end_marker, start)
+              return source[:start] + source[end:]
+
+          tray = '@Composable private fun XPSystemTray('
+          start_menu = '@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun StartMenu('
+          start_item = '@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun StartMenuAppItem'
+          context_row = '@Composable internal fun ContextMenuRow'
+          system_row = '@Composable private fun XPSystemRow'
+          run_window = '@Composable private fun RunWindow'
+
+          text = remove_between(text, tray, start_menu)
+          text = remove_between(text, start_menu, start_item)
+          text = remove_between(text, start_item, context_row)
+          text = remove_between(text, system_row, run_window)
+
+          path.write_text(text)
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile Dev debug
+        run: gradle assembleDevDebug
+
+      - name: Commit only after successful compile
+        shell: bash
+        run: |
+          git config user.name 'Ghanna1992'
+          git config user.email 'geradhanna@gmail.com'
+          git add app/src/main/java/com/windroid/xp/MainActivity.kt
+          git commit -m 'Remove superseded Start menu and tray code'
+          git push origin HEAD:refactor/main-split-dead-code
