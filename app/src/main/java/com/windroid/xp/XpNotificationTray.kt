@@ -8,7 +8,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,11 +28,19 @@ import java.util.*
 @Composable
 fun XpNotificationTray(context: Context) {
     var expanded by remember { mutableStateOf(false) }
+    var accessGranted by remember { mutableStateOf(notificationAccessGranted(context)) }
     val packages by WindroidNotificationListener.packages.collectAsState()
-    val accessGranted = notificationAccessGranted(context)
     val visible = packages.take(2)
     val overflow = packages.drop(2).take(8)
     val chevron = remember { loadTrayAsset(context, "chevron.png") }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val current = notificationAccessGranted(context)
+            if (current != accessGranted) accessGranted = current
+            delay(1000)
+        }
+    }
 
     Row(
         Modifier
@@ -54,13 +61,7 @@ fun XpNotificationTray(context: Context) {
                     color = Color.White,
                     fontSize = 9.sp,
                     modifier = Modifier
-                        .clickable {
-                            try {
-                                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                            } catch (_: Exception) {
-                                context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                            }
-                        }
+                        .clickable { openNotificationAccess(context) }
                         .padding(horizontal = 6.dp, vertical = 8.dp)
                 )
             } else {
@@ -75,15 +76,7 @@ fun XpNotificationTray(context: Context) {
             Modifier
                 .size(29.dp)
                 .clickable {
-                    if (!accessGranted) {
-                        try {
-                            context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        } catch (_: Exception) {
-                            context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }
-                    } else {
-                        expanded = !expanded
-                    }
+                    if (!accessGranted) openNotificationAccess(context) else expanded = !expanded
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -158,6 +151,14 @@ private fun XpTrayClock() {
     }
     val text = remember(now) { SimpleDateFormat("h:mm a", Locale.getDefault()).format(now) }
     Text(text, color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 3.dp))
+}
+
+private fun openNotificationAccess(context: Context) {
+    try {
+        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: Exception) {
+        context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 }
 
 private fun notificationAccessGranted(context: Context): Boolean {
