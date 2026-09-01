@@ -41,6 +41,7 @@ jobs:
           out_path.write_text(header + block)
           updated = text[:start] + text[end:]
           updated = updated.replace('@Composable private fun XPActionButton(', '@Composable internal fun XPActionButton(', 1)
+          updated = updated.replace('@Composable private fun XPWindow(', '@Composable internal fun XPWindow(', 1)
           updated = updated.replace('private fun iconCategory(', 'internal fun iconCategory(', 1)
           main_path.write_text(updated)
           PY
