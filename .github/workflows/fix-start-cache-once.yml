@@ -1,0 +1,57 @@
+name: Fix Start cache once
+
+on:
+  push:
+    branches:
+      - fix/start-menu-cache
+    paths:
+      - '.github/workflows/fix-start-cache-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-start-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Route Start menu icons through global cache
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/windroid/xp/XpStartMenu.kt')
+          s = p.read_text()
+          old = 'private fun startAsset(context: Context, fileName: String): ImageBitmap? = try { context.assets.open("icons/xp/$fileName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() } } catch (_: Exception) { null }'
+          new = 'private fun startAsset(context: Context, fileName: String): ImageBitmap? = loadAssetImage(context, "icons", "xp/$fileName")'
+          if old not in s:
+              raise SystemExit('Expected startAsset implementation not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile Dev debug
+        run: gradle assembleDevDebug
+
+      - name: Commit only after successful compile
+        shell: bash
+        run: |
+          git config user.name 'Ghanna1992'
+          git config user.email 'geradhanna@gmail.com'
+          git add app/src/main/java/com/windroid/xp/XpStartMenu.kt
+          git commit -m 'Cache Start menu system icons'
+          git push origin HEAD:fix/start-menu-cache
