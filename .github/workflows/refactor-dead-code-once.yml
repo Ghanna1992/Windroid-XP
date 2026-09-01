@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Remove superseded Start menu and tray helpers
+      - name: Remove superseded and unreferenced UI helpers
         shell: bash
         run: |
           python3 - <<'PY'
@@ -33,17 +33,23 @@ jobs:
               end = source.index(end_marker, start)
               return source[:start] + source[end:]
 
+          progress = '@Composable private fun XPProgressBar('
+          task_button = '@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun TaskButton'
           tray = '@Composable private fun XPSystemTray('
           start_menu = '@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun StartMenu('
           start_item = '@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun StartMenuAppItem'
           context_row = '@Composable internal fun ContextMenuRow'
-          system_row = '@Composable private fun XPSystemRow'
+          right_menu = '@Composable private fun RightMenuAssetItem'
           run_window = '@Composable private fun RunWindow'
+          clock = '@Composable private fun Clock()'
+          setup_wizard = '@Composable private fun FamilySetupWizard'
 
+          text = remove_between(text, progress, task_button)
           text = remove_between(text, tray, start_menu)
           text = remove_between(text, start_menu, start_item)
           text = remove_between(text, start_item, context_row)
-          text = remove_between(text, system_row, run_window)
+          text = remove_between(text, right_menu, run_window)
+          text = remove_between(text, clock, setup_wizard)
 
           path.write_text(text)
           PY
@@ -68,5 +74,5 @@ jobs:
           git config user.name 'Ghanna1992'
           git config user.email 'geradhanna@gmail.com'
           git add app/src/main/java/com/windroid/xp/MainActivity.kt
-          git commit -m 'Remove superseded Start menu and tray code'
+          git commit -m 'Remove superseded and unreferenced UI code'
           git push origin HEAD:refactor/main-split-dead-code
