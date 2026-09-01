@@ -46,4 +46,11 @@ import kotlin.math.roundToInt
 
 '''
 Path('app/src/main/java/com/windroid/xp/XpDesktopIcons.kt').write_text(imports + block)
-src.write_text(text[:start] + text[end:])
+remaining = text[:start] + text[end:]
+remaining = remaining.replace('private const val DEFAULT_DESKTOP_BACKGROUND', 'internal const val DEFAULT_DESKTOP_BACKGROUND', 1)
+remaining = remaining.replace('private fun iconPrefKey', 'internal fun iconPrefKey', 1)
+remaining = remaining.replace('private fun desktopPositionKey', 'internal fun desktopPositionKey', 1)
+remaining = remaining.replace('private val XP_ICON_REGISTRY', 'internal val XP_ICON_REGISTRY', 1)
+remaining = remaining.replace('private fun xpIcon', 'internal fun xpIcon', 1)
+remaining = remaining.replace('@Composable private fun ContextMenuRow', '@Composable internal fun ContextMenuRow', 1)
+src.write_text(remaining)
