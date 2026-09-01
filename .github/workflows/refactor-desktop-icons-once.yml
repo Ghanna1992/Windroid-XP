@@ -6,6 +6,7 @@ on:
       - refactor/desktop-icons
     paths:
       - '.github/workflows/refactor-desktop-icons-once.yml'
+      - 'tools/extract_desktop_icons.py'
 
 permissions:
   contents: write
