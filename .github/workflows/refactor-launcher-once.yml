@@ -1,0 +1,72 @@
+name: Refactor launcher once
+
+on:
+  push:
+    branches:
+      - refactor/main-split-launcher
+    paths:
+      - '.github/workflows/refactor-launcher-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  extract-launcher:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout refactor branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract launcher app helpers from MainActivity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main_path = Path('app/src/main/java/com/windroid/xp/MainActivity.kt')
+          out_path = Path('app/src/main/java/com/windroid/xp/LauncherApps.kt')
+          text = main_path.read_text()
+
+          model_start = text.index('data class LaunchableApp(')
+          model_end = text.index('private const val DEFAULT_DESKTOP_BACKGROUND')
+          model_block = text[model_start:model_end].rstrip() + '\n\n'
+
+          funcs_start = text.index('private fun installedApps(context: Context): List<LaunchableApp> {')
+          funcs_end = text.index('private fun iconPrefKey(id: String) = "custom_icon_$id"')
+          funcs_block = text[funcs_start:funcs_end].rstrip() + '\n'
+          for name in ['installedApps', 'defaultXpAppIcon', 'launchApp', 'openAppInfo']:
+              funcs_block = funcs_block.replace(f'private fun {name}', f'internal fun {name}', 1)
+
+          header = '''package com.windroid.xp\n\nimport android.content.Context\nimport android.content.Intent\nimport android.net.Uri\nimport android.provider.Settings\nimport androidx.compose.ui.graphics.ImageBitmap\nimport androidx.compose.ui.graphics.asImageBitmap\nimport androidx.core.graphics.drawable.toBitmap\n\n'''
+          out_path.write_text(header + model_block + funcs_block)
+
+          without_model = text[:model_start] + text[model_end:]
+          funcs_start2 = without_model.index('private fun installedApps(context: Context): List<LaunchableApp> {')
+          funcs_end2 = without_model.index('private fun iconPrefKey(id: String) = "custom_icon_$id"')
+          main_path.write_text(without_model[:funcs_start2] + without_model[funcs_end2:])
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile Dev debug
+        run: gradle assembleDevDebug
+
+      - name: Commit only after successful compile
+        shell: bash
+        run: |
+          git config user.name 'Ghanna1992'
+          git config user.email 'geradhanna@gmail.com'
+          git add app/src/main/java/com/windroid/xp/MainActivity.kt app/src/main/java/com/windroid/xp/LauncherApps.kt
+          git commit -m 'Extract launcher app handling from MainActivity'
+          git push origin HEAD:refactor/main-split-launcher
