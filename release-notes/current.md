@@ -16,3 +16,4 @@
 - Active Android notification apps can now appear as taskbar tray icons.
 - Added a one-time notification-access setup path for the Windroid tray.
 - Fixed a Windows Update race where repeated install taps could launch competing updater jobs.
+- Windows Update now locks its install controls as soon as an update starts and rejects duplicate launch attempts.
