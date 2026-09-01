@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun WindroidDesktop(context: Context) {
     val prefs = remember { context.getSharedPreferences("windroid_prefs", Context.MODE_PRIVATE) }
-    val apps = remember { installedApps(context) }
+    val apps = rememberInstalledApps(context)
     var startOpen by remember { mutableStateOf(false) }
     var computerOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
