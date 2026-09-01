@@ -12,3 +12,6 @@
 - Improved All Programs browsing and recent-program presentation.
 - Start menu now uses the classic XP system-icon library throughout its system shortcuts.
 - Fixed Start menu popup tap-through and dismissal behavior.
+- Taskbar notification area redesigned with an XP-style expandable tray.
+- Active Android notification apps can now appear as taskbar tray icons.
+- Added a one-time notification-access setup path for the Windroid tray.
